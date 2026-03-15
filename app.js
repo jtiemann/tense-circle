@@ -435,6 +435,15 @@ function getAllVerbForms(conjugation) {
     // werden/würde forms for Futur I and Konjunktiv II periphrastic
     ['werde', 'wirst', 'wird', 'werden', 'werdet'].forEach(f => forms.add(f));
     ['würde', 'würdest', 'würden', 'würdet'].forEach(f => forms.add(f));
+    // Include auxiliary verb forms (haben/sein) so Perfekt & Conditional-past sentences pass the hasVerb check
+    if (conjugation.hilfsverb) {
+        const hilfsConj = getConjugation(conjugation.hilfsverb);
+        for (const tense of ['praesens', 'konjunktivII']) {
+            for (const form of Object.values(hilfsConj[tense])) {
+                forms.add(form);
+            }
+        }
+    }
     return [...forms];
 }
 
@@ -598,6 +607,105 @@ function generateSteps(_verb, conjugation) {
 // --- Constants ---
 const NUM_STEPS = 11;
 
+// --- Voice Engine ---
+
+const synth = window.speechSynthesis || null;
+const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+
+let voiceEnabled = true;   // speech synthesis on by default
+let micActive = false;
+let recognition = null;
+
+// SVG icon strings (heroicons v1 outline, 24px)
+const ICON_VOLUME_ON = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+  <path stroke-linecap="round" stroke-linejoin="round" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+  <path stroke-linecap="round" stroke-linejoin="round" d="M15.536 8.464a5 5 0 010 7.072" />
+  <path stroke-linecap="round" stroke-linejoin="round" d="M17.95 6.05a9 9 0 010 11.9" />
+</svg>`;
+
+const ICON_VOLUME_OFF = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+  <path stroke-linecap="round" stroke-linejoin="round" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+  <path stroke-linecap="round" stroke-linejoin="round" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+</svg>`;
+
+function speak(text) {
+    if (!voiceEnabled || !synth) return;
+    synth.cancel();
+    const utt = new SpeechSynthesisUtterance(text);
+    utt.lang = 'de-DE';
+    utt.rate = 0.88;
+    utt.pitch = 1;
+    synth.speak(utt);
+}
+
+function startMic() {
+    if (!SpeechRec) {
+        alert('Speech recognition is not supported in this browser.\nTry Chrome or Edge for voice input.');
+        return;
+    }
+    if (micActive) {
+        micActive = false;          // signal onend not to restart
+        recognition && recognition.stop();
+        return;
+    }
+    recognition = new SpeechRec();
+    recognition.lang = 'de-DE';
+    recognition.continuous = true;       // keep mic open across short pauses
+    recognition.interimResults = true;   // preview words as you speak
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => {
+        micActive = true;
+        updateMicUI(true);
+    };
+    recognition.onresult = (event) => {
+        // Accumulate all results so far
+        let interim = '';
+        let final = '';
+        for (let i = 0; i < event.results.length; i++) {
+            const t = event.results[i][0].transcript;
+            if (event.results[i].isFinal) final += t;
+            else interim += t;
+        }
+        // Show what's been heard (final + any in-progress words)
+        dom.sentenceInput.value = final + interim;
+        dom.sentenceInput.dispatchEvent(new Event('input'));
+        // Mic stays open — user clicks "Speak" again to stop
+    };
+    recognition.onerror = (e) => {
+        console.warn('Speech recognition error:', e.error);
+        micActive = false;
+        updateMicUI(false);
+    };
+    recognition.onend = () => {
+        // Chrome fires onend after silence even with continuous:true.
+        // If the user hasn't clicked Stop, restart immediately to keep mic open.
+        if (micActive) {
+            recognition.start();
+        } else {
+            updateMicUI(false);
+            dom.sentenceInput.focus();
+        }
+    };
+    recognition.start();
+}
+
+function updateMicUI(active) {
+    if (!dom.micBtn) return;
+    dom.micBtn.classList.toggle('text-red-500', active);
+    dom.micBtn.classList.toggle('text-slate-500', !active);
+    dom.micBtn.classList.toggle('animate-pulse', active);
+    if (dom.micLabel) dom.micLabel.textContent = active ? 'Listening…' : 'Speak';
+}
+
+function updateVoiceUI() {
+    if (!dom.voiceToggleBtn) return;
+    dom.voiceToggleBtn.innerHTML = voiceEnabled ? ICON_VOLUME_ON : ICON_VOLUME_OFF;
+    dom.voiceToggleBtn.title = voiceEnabled ? 'Mute voice feedback' : 'Enable voice feedback';
+    dom.voiceToggleBtn.classList.toggle('text-brand-500', voiceEnabled);
+    dom.voiceToggleBtn.classList.toggle('text-slate-400', !voiceEnabled);
+}
+
 // --- Application State ---
 let gameState = {
     verb: null,
@@ -650,7 +758,11 @@ const dom = {
     historyList: document.getElementById('history-list'),
     historyCount: document.getElementById('history-count'),
     emptyHistory: document.getElementById('empty-history'),
-    historyTemplate: document.getElementById('history-item-template')
+    historyTemplate: document.getElementById('history-item-template'),
+
+    micBtn: document.getElementById('mic-btn'),
+    micLabel: document.getElementById('mic-label'),
+    voiceToggleBtn: document.getElementById('voice-toggle-btn')
 };
 
 // --- Initialization ---
@@ -694,6 +806,7 @@ function initApp() {
     dom.verbModal.classList.remove('hidden', 'opacity-0', 'pointer-events-none');
     dom.verbModal.classList.add('flex');
     setupEventListeners();
+    updateVoiceUI();
 }
 
 function setupEventListeners() {
@@ -797,6 +910,20 @@ function setupEventListeners() {
             else dom.sentenceInput.classList.remove('border-red-300');
         }
     });
+
+    // Voice: mic button
+    if (dom.micBtn) {
+        dom.micBtn.addEventListener('click', startMic);
+    }
+
+    // Voice: toggle synthesis on/off
+    if (dom.voiceToggleBtn) {
+        dom.voiceToggleBtn.addEventListener('click', () => {
+            voiceEnabled = !voiceEnabled;
+            if (!voiceEnabled && synth) synth.cancel();
+            updateVoiceUI();
+        });
+    }
 }
 
 function showVerbError(msg) {
@@ -888,6 +1015,8 @@ function updateGameUI() {
             <p class="font-medium text-slate-800">${currentStep.prompt}</p>
         `;
         dom.instructionText.style.opacity = 1;
+        // Read the reference sentence then the instruction aloud
+        speak(`${refSentence}. ${currentStep.name}.`);
     }, 150);
 
     dom.sentenceInput.value = '';
@@ -1131,43 +1260,50 @@ function checkAnswer() {
     gameState.isProcessing = true;
     dom.submitBtn.disabled = true;
 
-    const result = validateStep(gameState.currentStepIndex, input, gameState.conjugation);
+    try {
+        const result = validateStep(gameState.currentStepIndex, input, gameState.conjugation);
 
-    if (!result.valid) {
-        showMessage(result.error, "error");
+        if (!result.valid) {
+            showMessage(result.error, "error");
+            return;
+        }
+
+        const refSentence = gameState.currentSentence || gameState.startSentence;
+        const modelAnswer = buildModelAnswer(gameState.currentStepIndex, refSentence, gameState.conjugation);
+
+        // Read the model answer aloud after a short delay
+        setTimeout(() => speak(modelAnswer), 400);
+
+        gameState.sentenceHistory.unshift({
+            stepName: currentStep.name,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            userText: input,
+            idealText: modelAnswer,
+            themeColor: currentStep.theme
+        });
+
+        // In chain mode, evolve the reference sentence
+        if (gameState.chainMode) {
+            gameState.currentSentence = modelAnswer;
+        }
+
+        showMessage(`Step ${gameState.currentStepIndex + 1} complete! Compare your answer with the model below.`);
+        renderHistory();
+        gameState.currentStepIndex++;
+
+        if (gameState.currentStepIndex >= NUM_STEPS) {
+            alert("Herzlichen Glückwunsch! You've completed the full verb circle!");
+            gameState.currentStepIndex = 0;
+            gameState.currentSentence = gameState.startSentence;
+        }
+        updateGameUI();
+    } catch (err) {
+        console.error('checkAnswer error:', err);
+        showMessage("Something went wrong. Please try again.", "error");
+    } finally {
         dom.submitBtn.disabled = false;
         gameState.isProcessing = false;
-        return;
     }
-
-    const refSentence = gameState.currentSentence || gameState.startSentence;
-    const modelAnswer = buildModelAnswer(gameState.currentStepIndex, refSentence, gameState.conjugation);
-
-    gameState.sentenceHistory.unshift({
-        stepName: currentStep.name,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        userText: input,
-        idealText: modelAnswer,
-        themeColor: currentStep.theme
-    });
-
-    // In chain mode, evolve the reference sentence
-    if (gameState.chainMode) {
-        gameState.currentSentence = modelAnswer;
-    }
-
-    showMessage(`Step ${gameState.currentStepIndex + 1} complete! Compare your answer with the model below.`);
-    renderHistory();
-    gameState.currentStepIndex++;
-
-    if (gameState.currentStepIndex >= NUM_STEPS) {
-        alert("Herzlichen Glückwunsch! You've completed the full verb circle!");
-        gameState.currentStepIndex = 0;
-        gameState.currentSentence = gameState.startSentence;
-    }
-    updateGameUI();
-    dom.submitBtn.disabled = false;
-    gameState.isProcessing = false;
 }
 
 // --- History Rendering ---

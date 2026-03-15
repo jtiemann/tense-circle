@@ -2,7 +2,7 @@
 
 A browser-based German grammar practice app built around a circular sequence of tense and clause transformations.
 
-The app presents one fixed starting sentence and asks the learner to rewrite or expand it through an 11-step “verb circle.” At each step, the learner writes a new German sentence that follows a specific grammar instruction. The app then sends the attempt to the Gemini API for correction, validation, and a model answer.
+The app presents a starting sentence and asks the learner to rewrite or expand it through an 11-step "verb circle." At each step, the learner writes (or speaks) a new German sentence that follows a specific grammar instruction. All validation and model answers are generated locally — no API key or external service required.
 
 ## What it does
 
@@ -10,30 +10,28 @@ Tense Circle is a small single-page app for guided German sentence transformatio
 
 Current behavior in this version:
 
-- Uses a fixed starting sentence: `Ich lege den Apfel auf den Tisch.`
-- Uses a fixed target verb hub in the UI: `haben`
+- Supports 49 preset verbs including separable (trennbare) verbs, or any custom verb
+- Each preset verb comes with 3 example starting sentences; sentences can be shuffled or edited freely
 - Guides the learner through 11 sequential grammar tasks
-- Performs lightweight client-side validation before sending the answer to Gemini
-- Uses Gemini to:
-  - reject clearly invalid or unrelated answers
-  - correct the learner’s sentence
-  - produce an ideal suggested sentence
-  - provide an English translation of the suggested sentence
-- Stores the Gemini API key in browser `localStorage`
-- Shows a running history of attempts and feedback in the right-hand panel
+- Performs local rule-based validation for each step — no external API calls
+- Generates a model answer locally from conjugation data
+- Supports **Chain Mode**: each step uses the model answer from the previous step as the new reference sentence
+- **Voice input**: click "Speak" to dictate your answer in German using the browser's built-in speech recognition
+- **Voice feedback**: the app reads the reference sentence and model answer aloud in German using the browser's speech synthesis; can be muted with the speaker toggle
+- Shows a running history of attempts and model answers in the right-hand panel
 - Resets to step 1 after the full circle is completed
 
 ## Learning flow
 
-The current app defines these 11 steps:
+The app defines these 11 steps:
 
-1. Prediction
+1. Futur I (Prediction)
 2. Modal (present)
 3. Modal Past
-4. Simple Past
-5. Conditional
-6. Perfect
-7. Conditional (past)
+4. Simple Past (Präteritum)
+5. Conditional (Konjunktiv II / würde)
+6. Perfect (Perfekt)
+7. Conditional Past
 8. Subordinate Clause 1 (`dass`)
 9. Subordinate Clause 2 (`weil`)
 10. Konjunktiv II
@@ -49,15 +47,17 @@ This repo is intentionally lightweight and does not use a build system.
 - Vanilla JavaScript
 - CSS
 - Tailwind via CDN
-- Google Fonts
-- Gemini 2.5 Flash via direct browser `fetch`
+- Google Fonts (Outfit)
+- Web Speech API (browser-native) for voice input and output
+
+No external AI service, no API key, no backend.
 
 ## Project structure
 
 ```text
 .
 ├── index.html   # Main single-page UI
-├── app.js       # Application state, rendering, validation, Gemini integration
+├── app.js       # Application state, conjugation engine, validation, rendering
 └── style.css    # Custom styling and animations
 ```
 
@@ -74,26 +74,20 @@ Open `index.html` in a browser.
 Using Python:
 
 ```bash
-python -m http.server 8000
+python -m http.server 8080
 ```
 
 Then open:
 
 ```text
-http://localhost:8000
+http://localhost:8080
 ```
+
+> **Note:** Voice input (speech recognition) requires Chrome or Edge. It may not work when opening `index.html` directly as a `file://` URL — use a local server.
 
 ## Setup
 
-On first launch, the app asks for a Gemini API key.
-
-The key is stored in the browser under:
-
-```text
-gemini_api_key_tense_circle
-```
-
-To get a key, use Google AI Studio.
+No setup required. Open the app, select a verb, and start.
 
 ## How the app works internally
 
@@ -101,58 +95,76 @@ To get a key, use Google AI Studio.
 
 On `DOMContentLoaded`, the app:
 
-- checks `localStorage` for an existing Gemini key
-- shows the API modal if no key is present
-- sets up UI event listeners
+- populates the verb dropdown from the built-in `VERB_PRESETS` list
+- shows the verb selection modal
+- sets up UI event listeners and initialises the voice engine
 
 ### 2. State model
 
 The app maintains a simple in-memory state object:
 
-- `apiKey`
+- `verb` — the selected infinitive
+- `startSentence` — the starting sentence for the circle
+- `currentSentence` — evolves in chain mode
+- `chainMode` — whether chain mode is active
+- `conjugation` — full conjugation data for the selected verb
+- `steps` — generated step definitions for the current verb
 - `currentStepIndex`
 - `sentenceHistory`
 - `isProcessing`
 
-### 3. Validation
+### 3. Conjugation engine
 
-Before calling Gemini, the app performs basic checks:
+`app.js` contains a dictionary of irregular verb conjugations (`IRREGULAR_VERBS`) covering ~60 verbs, plus a regular conjugation fallback for any unknown verb.
 
-- sentence length must be at least 10 characters
-- the input must include one of several accepted forms related to `haben`
+Separable verbs (e.g. `aufmachen`, `anrufen`) are detected automatically. The engine splits the prefix for main-clause word order and rejoins it for subordinate clauses.
 
-This is only a coarse check and does not guarantee grammatical correctness.
+### 4. Validation
 
-### 4. AI evaluation
+Before accepting an answer, the app performs rule-based checks per step:
 
-The browser sends the learner’s answer and the current rule prompt to Gemini.
+- Futur I: requires a form of `werden` + the infinitive
+- Modal: requires a modal verb + infinitive
+- Präteritum: requires the Präteritum form of the target verb
+- Subordinate clauses: requires `dass`/`weil` and verb-final order
+- etc.
 
-Gemini is instructed to return JSON with:
+This is faster and more predictable than AI evaluation, though it does not catch all grammatical errors.
 
-- `isValid`
-- `errorMessage`
-- `correctedAttempt`
-- `suggestedSentence`
-- `englishTranslation`
+### 5. Model answer generation
 
-### 5. History rendering
+After a valid submission, the app generates a model answer locally using the conjugation data and the structure of the starting sentence. The model answer is shown in the history panel and spoken aloud (if voice is enabled).
 
-Each successful response is added to a history panel showing:
+### 6. Voice input
 
-- step name
-- timestamp
+Clicking **Speak** starts the browser's `SpeechRecognition` API with `lang: 'de-DE'`. The mic stays open until you click **Speak** again. Interim results appear in the textarea as you speak.
+
+Voice input requires Chrome or Edge.
+
+### 7. Voice output
+
+At each new step, the app reads the reference sentence and step name aloud using `SpeechSynthesis` with `lang: 'de-DE'`. After a correct submission, the model answer is spoken. The speaker button in the header mutes/unmutes synthesis.
+
+### 8. History rendering
+
+Each accepted answer is prepended to the history panel showing:
+
+- step name and timestamp
 - what the learner wrote
-- grammar correction, when needed
-- ideal suggestion
-- English translation
+- the model answer for that step
 
 ## UI summary
 
 The interface has three main parts:
 
-### API key modal
+### Verb selection modal
 
-A startup modal that collects and stores the Gemini API key.
+A startup modal with:
+
+- dropdown of 49 preset verbs grouped by Regular/Irregular and Separable
+- custom verb input (any German infinitive)
+- starting sentence input (pre-filled from preset, editable, shuffleable)
+- Chain Mode toggle
 
 ### Circle panel
 
@@ -166,85 +178,33 @@ A circular progress visualization with:
 
 A right-hand column containing:
 
-- current step title
-- current grammar instruction
-- sentence textarea
-- check button with loading state
+- current step title and step counter
+- reference sentence and grammar instruction
+- sentence textarea with mic (voice input) button
+- Check Answer button
 - success/error message area
-- scrollable history of feedback
+- scrollable history of model answers
 
-## Known limitations in the current version
-
-This README reflects the repo as it exists now, and there are several structural limitations worth calling out.
+## Known limitations
 
 ### Product limitations
 
-- Only one fixed starting sentence is supported
-- Only one fixed learning path is supported
-- The UI centers on `haben`, but the original starting sentence uses `legen`, so the conceptual model is not fully consistent
-- Progress is not persisted beyond the current session except for the API key
+- Progress is not persisted beyond the current session
 - There is no learner profile, scoring, lesson selection, or spaced repetition
+- The completion flow shows an alert and resets to step 1
 
 ### Technical limitations
 
-- API calls are made directly from the browser
-- The user’s API key is stored locally in the browser rather than handled by a backend
-- There is no test suite
-- There is no modular architecture; all app logic lives in one JavaScript file
-- There is no package manifest, build pipeline, or deployment config
-- Validation is mostly heuristic string matching
-- Error handling is functional but minimal
+- All app logic lives in one JavaScript file
+- There is no test suite, package manifest, or build pipeline
+- Validation is rule-based and does not catch all grammatical errors
+- Voice input requires Chrome or Edge; `SpeechRecognition` is not supported in Firefox or Safari
 
 ### UX limitations
 
 - The user cannot move freely between steps
-- The reset action clears progress without any persistence
-- The completion flow simply shows an alert and resets the step index to 0
-- Accessibility appears limited: no explicit keyboard flow beyond submit shortcuts, and no a11y-focused structure
-- Mobile behavior is only lightly handled
-
-## Suggestions for a v2
-
-A stronger second version could separate the app into four layers:
-
-### Content layer
-
-- configurable verb packs
-- multiple starting sentences
-- reusable grammar step definitions
-- CEFR-based difficulty levels
-
-### Evaluation layer
-
-- rule-aware validation before AI calls
-- structured prompt templates per exercise type
-- clearer grading rubric
-- support for “close but acceptable” answers
-
-### App architecture
-
-- modular JavaScript or TypeScript
-- component-based UI
-- persistent learner progress
-- local lesson state and resumable sessions
-
-### Platform and security
-
-- backend proxy for model calls
-- server-side key handling
-- analytics and telemetry
-- test coverage for step logic and rendering
-
-## Development notes for the next rewrite
-
-When rebuilding this project, the most important design decision is to separate:
-
-1. exercise content
-2. evaluation logic
-3. UI state
-4. model integration
-
-Right now those concerns are tightly coupled. A rewrite will go much faster if the grammar path becomes data-driven and the AI integration is abstracted behind a small evaluation interface.
+- Mobile layout is only lightly handled
+- Accessibility is limited beyond basic keyboard shortcuts (Ctrl+Enter to submit)
 
 ## License
 
