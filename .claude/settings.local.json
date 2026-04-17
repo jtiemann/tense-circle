@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m http.server 8080)",
+      "Bash(grep -E '\\\\.\\(ts|tsx|js|jsx|json|py|java|rs|go|cpp|c|h|md|yml|yaml|txt\\)$')",
+      "Bash(awk '{print $2}')",
+      "Bash(python3 -c ' *)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(curl -s http://localhost:8080/)",
+      "Bash(where python *)"
+    ]
+  }
+}

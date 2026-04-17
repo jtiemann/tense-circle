@@ -607,6 +607,48 @@ function generateSteps(_verb, conjugation) {
 // --- Constants ---
 const NUM_STEPS = 11;
 
+// --- Persistence ---
+
+const STORAGE_KEY = 'tensecircle_v1';
+
+function saveProgress() {
+    try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({
+            verb: gameState.verb,
+            startSentence: gameState.startSentence,
+            currentSentence: gameState.currentSentence,
+            chainMode: gameState.chainMode,
+            currentStepIndex: gameState.currentStepIndex,
+            sentenceHistory: gameState.sentenceHistory
+        }));
+    } catch (e) { /* storage unavailable */ }
+}
+
+function loadProgress() {
+    try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return false;
+        const data = JSON.parse(raw);
+        if (!data.verb || !data.startSentence) return false;
+        gameState.verb = data.verb;
+        gameState.startSentence = data.startSentence;
+        gameState.currentSentence = data.currentSentence || data.startSentence;
+        gameState.chainMode = !!data.chainMode;
+        gameState.currentStepIndex = Math.min(data.currentStepIndex || 0, NUM_STEPS - 1);
+        gameState.sentenceHistory = data.sentenceHistory || [];
+        gameState.conjugation = getConjugation(data.verb);
+        gameState.steps = generateSteps(data.verb, gameState.conjugation);
+        gameState.requiredVerbForms = getAllVerbForms(gameState.conjugation);
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+function clearProgress() {
+    try { localStorage.removeItem(STORAGE_KEY); } catch (e) { }
+}
+
 // --- Voice Engine ---
 
 const synth = window.speechSynthesis || null;
@@ -638,55 +680,62 @@ function speak(text) {
     synth.speak(utt);
 }
 
-function startMic() {
-    if (!SpeechRec) {
-        alert('Speech recognition is not supported in this browser.\nTry Chrome or Edge for voice input.');
-        return;
-    }
-    if (micActive) {
-        micActive = false;          // signal onend not to restart
-        recognition && recognition.stop();
-        return;
-    }
-    recognition = new SpeechRec();
-    recognition.lang = 'de-DE';
-    recognition.continuous = true;       // keep mic open across short pauses
-    recognition.interimResults = true;   // preview words as you speak
-    recognition.maxAlternatives = 1;
+function buildRecognition() {
+    const rec = new SpeechRec();
+    rec.lang = 'de-DE';
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.maxAlternatives = 1;
 
-    recognition.onstart = () => {
-        micActive = true;
-        updateMicUI(true);
-    };
-    recognition.onresult = (event) => {
-        // Accumulate all results so far
-        let interim = '';
-        let final = '';
+    rec.onstart = () => { micActive = true; updateMicUI(true); };
+
+    rec.onresult = (event) => {
+        let interim = '', final = '';
         for (let i = 0; i < event.results.length; i++) {
             const t = event.results[i][0].transcript;
             if (event.results[i].isFinal) final += t;
             else interim += t;
         }
-        // Show what's been heard (final + any in-progress words)
         dom.sentenceInput.value = final + interim;
         dom.sentenceInput.dispatchEvent(new Event('input'));
-        // Mic stays open — user clicks "Speak" again to stop
     };
-    recognition.onerror = (e) => {
+
+    rec.onerror = (e) => {
         console.warn('Speech recognition error:', e.error);
+        if (e.error === 'aborted') return; // normal during restart, not a real error
         micActive = false;
         updateMicUI(false);
+        if (e.error === 'not-allowed') {
+            showMessage('Microphone access was denied. Allow microphone permission in your browser, or open the app as a local file (file://) instead of via a server.', 'error');
+        }
     };
-    recognition.onend = () => {
-        // Chrome fires onend after silence even with continuous:true.
-        // If the user hasn't clicked Stop, restart immediately to keep mic open.
+
+    // Chrome fires onend after each pause even with continuous:true.
+    // Create a fresh instance each time — Chrome won't reliably restart the same object.
+    rec.onend = () => {
         if (micActive) {
-            recognition.start();
+            recognition = buildRecognition();
+            try { recognition.start(); } catch (_) { /* ignore race condition */ }
         } else {
             updateMicUI(false);
             dom.sentenceInput.focus();
         }
     };
+
+    return rec;
+}
+
+function startMic() {
+    if (!SpeechRec) {
+        showMessage('Speech recognition is not supported in this browser. Try Chrome or Edge for voice input.', 'error');
+        return;
+    }
+    if (micActive) {
+        micActive = false;
+        recognition && recognition.stop();
+        return;
+    }
+    recognition = buildRecognition();
     recognition.start();
 }
 
@@ -717,7 +766,8 @@ let gameState = {
     requiredVerbForms: [],
     currentStepIndex: 0,
     sentenceHistory: [],
-    isProcessing: false
+    isProcessing: false,
+    chosenModal: null
 };
 
 // Tracks which sentence index is currently shown for the selected preset
@@ -762,7 +812,8 @@ const dom = {
 
     micBtn: document.getElementById('mic-btn'),
     micLabel: document.getElementById('mic-label'),
-    voiceToggleBtn: document.getElementById('voice-toggle-btn')
+    voiceToggleBtn: document.getElementById('voice-toggle-btn'),
+    skipStepBtn: document.getElementById('skip-step-btn')
 };
 
 // --- Initialization ---
@@ -802,11 +853,14 @@ function populateVerbDropdown() {
 
 function initApp() {
     populateVerbDropdown();
-    // Open verb selection immediately — no API key needed
-    dom.verbModal.classList.remove('hidden', 'opacity-0', 'pointer-events-none');
-    dom.verbModal.classList.add('flex');
     setupEventListeners();
     updateVoiceUI();
+    if (loadProgress()) {
+        hideVerbModalAndStart();
+    } else {
+        dom.verbModal.classList.remove('hidden', 'opacity-0', 'pointer-events-none');
+        dom.verbModal.classList.add('flex');
+    }
 }
 
 function setupEventListeners() {
@@ -850,6 +904,11 @@ function setupEventListeners() {
             verb = dom.customVerbInput.value.trim().toLowerCase();
             sentence = dom.customSentenceInput.value.trim();
             if (!verb || verb.length < 2) { showVerbError("Please enter a valid German verb infinitive."); return; }
+            if (!verb.endsWith('en') && !verb.endsWith('n')) {
+                showVerbError("German verb infinitives end in '-en' or '-n' (e.g., kaufen, lächeln). Please check your spelling.");
+                return;
+            }
+            if (verb.includes(' ')) { showVerbError("Enter a single verb infinitive without spaces."); return; }
         } else if (val === '') {
             showVerbError("Please select a verb.");
             return;
@@ -869,10 +928,13 @@ function setupEventListeners() {
         gameState.requiredVerbForms = getAllVerbForms(gameState.conjugation);
         gameState.currentStepIndex = 0;
         gameState.sentenceHistory = [];
+        gameState.chosenModal = null;
+        clearProgress();
         hideVerbModalAndStart();
     });
 
     dom.changeVerbBtn.addEventListener('click', () => {
+        clearProgress();
         dom.gameContainer.classList.add('hidden', 'opacity-0', 'pointer-events-none');
         dom.verbModal.classList.remove('hidden', 'opacity-0', 'pointer-events-none');
         dom.verbModal.classList.add('flex');
@@ -883,6 +945,8 @@ function setupEventListeners() {
             gameState.currentStepIndex = 0;
             gameState.sentenceHistory = [];
             gameState.currentSentence = gameState.startSentence;
+            gameState.chosenModal = null;
+            saveProgress();
             updateGameUI();
             renderHistory();
         }
@@ -910,6 +974,11 @@ function setupEventListeners() {
             else dom.sentenceInput.classList.remove('border-red-300');
         }
     });
+
+    // Skip step
+    if (dom.skipStepBtn) {
+        dom.skipStepBtn.addEventListener('click', skipStep);
+    }
 
     // Voice: mic button
     if (dom.micBtn) {
@@ -1087,7 +1156,7 @@ function validateStep(stepIndex, input, conjugation) {
     const hasPraes = hasAnyToken(tokens, praesens) || hasAnyToken(tokens, sepPraes);
 
     const hasFutur  = hasAnyToken(tokens, ['werde','wirst','wird','werden','werdet']);
-    const hasModal  = hasAnyToken(tokens, ['kann','kannst','muss','musst','will','willst','soll','sollst','darf','darfst','mag','magst']);
+    const hasModal  = hasAnyToken(tokens, ['kann','kannst','muss','musst','will','willst','soll','sollst','darf','darfst','mag','magst','möchte','möchtest','möchten','möchtet']);
     const hasModalInf = hasAnyToken(tokens, ['können','müssen','wollen','sollen','dürfen','mögen']);
     const hasWuerde = hasAnyToken(tokens, ['würde','würdest','würden','würdet']);
 
@@ -1098,19 +1167,29 @@ function validateStep(stepIndex, input, conjugation) {
     const hasHilfsKII = hasAnyToken(tokens, hKIIForms);
 
     switch (stepIndex) {
-        case 0: // Futur I
+        case 0: { // Futur I
             if (!hasFutur)
                 return { valid: false, error: `Use a form of 'werden' (werde/wird/werden…) for Futur I.` };
             if (!hasInf)
                 return { valid: false, error: `Place the infinitive '${inf}' at the end of the clause.` };
+            if (tokens.filter(t => t === inf.toLowerCase()).length > 1)
+                return { valid: false, error: `'${inf}' appears more than once. In Futur I it belongs only at the very end — remove the extra copy.` };
+            if (!tokens.slice(-2).includes(inf.toLowerCase()))
+                return { valid: false, error: `In Futur I, the infinitive '${inf}' must be the last word. Move it to the end.` };
             return { valid: true };
+        }
 
-        case 1: // Modal present
+        case 1: { // Modal present
             if (!hasModal)
                 return { valid: false, error: `Include a present modal verb (muss/kann/will/soll/darf/mag).` };
             if (!hasInf)
                 return { valid: false, error: `Place the infinitive '${inf}' at the end of the clause.` };
+            if (tokens.filter(t => t === inf.toLowerCase()).length > 1)
+                return { valid: false, error: `'${inf}' appears more than once. With a modal verb it belongs only at the very end — remove the extra copy.` };
+            if (!tokens.slice(-2).includes(inf.toLowerCase()))
+                return { valid: false, error: `With a modal verb, the infinitive '${inf}' must be the last word. Move it to the end.` };
             return { valid: true };
+        }
 
         case 2: // Modal past (modal perfect)
             if (!hasHilfs)
@@ -1126,12 +1205,15 @@ function validateStep(stepIndex, input, conjugation) {
                 return { valid: false, error: `Use the Präteritum form of '${inf}'.${sep ? ` (e.g., "… ${conjugation.praeteritum.er} … ${sep}.")` : ''}` };
             return { valid: true };
 
-        case 4: // Conditional
+        case 4: { // Conditional
             if (!hasWuerde && !hasKII)
                 return { valid: false, error: `Use 'würde + ${inf}' or a Konjunktiv II form of '${inf}'.` };
             if (hasWuerde && !hasInf)
                 return { valid: false, error: `When using 'würde', place the infinitive '${inf}' at the end.` };
+            if (hasWuerde && !tokens.slice(-2).includes(inf.toLowerCase()))
+                return { valid: false, error: `With 'würde', the infinitive '${inf}' must be the last word. Move it to the end.` };
             return { valid: true };
+        }
 
         case 5: // Perfect
             if (!hasHilfs)
@@ -1147,19 +1229,33 @@ function validateStep(stepIndex, input, conjugation) {
                 return { valid: false, error: `Include the Partizip II '${pp}'.` };
             return { valid: true };
 
-        case 7: // Subordinate dass
+        case 7: { // Subordinate dass
             if (!hasToken(tokens, 'dass'))
                 return { valid: false, error: `Your sentence must include the conjunction 'dass'.` };
-            if (!hasPraes)
+            const dassPos = input.toLowerCase().indexOf('dass');
+            const afterDassTokens = tokenize(input.slice(dassPos + 4));
+            const verbForms7 = [...praesens, ...sepPraes];
+            if (!afterDassTokens.some(t => verbForms7.includes(t)))
                 return { valid: false, error: `In the dass-clause the verb goes to the end${sep ? ` (rejoined: ${sep}${conjugation.praesens.er})` : ''}.` };
+            const last27 = afterDassTokens.slice(-2);
+            if (!last27.some(t => verbForms7.includes(t)))
+                return { valid: false, error: `In a dass-clause, the verb must come at the very end. Move '${sep ? sep + conjugation.praesens.er : conjugation.praesens.er}' to the end of the clause.` };
             return { valid: true };
+        }
 
-        case 8: // Subordinate weil
+        case 8: { // Subordinate weil
             if (!hasToken(tokens, 'weil'))
                 return { valid: false, error: `Your sentence must include the conjunction 'weil'.` };
-            if (!hasPraes)
+            const weilPos = input.toLowerCase().indexOf('weil');
+            const afterWeilTokens = tokenize(input.slice(weilPos + 4));
+            const verbForms8 = [...praesens, ...sepPraes];
+            if (!afterWeilTokens.some(t => verbForms8.includes(t)))
                 return { valid: false, error: `In the weil-clause the verb goes to the end${sep ? ` (rejoined: ${sep}${conjugation.praesens.er})` : ''}.` };
+            const last28 = afterWeilTokens.slice(-2);
+            if (!last28.some(t => verbForms8.includes(t)))
+                return { valid: false, error: `In a weil-clause, the verb must come at the very end. Move '${sep ? sep + conjugation.praesens.er : conjugation.praesens.er}' to the end of the clause.` };
             return { valid: true };
+        }
 
         case 9: // Konjunktiv II
             if (!hasKII && !hasWuerde)
@@ -1188,6 +1284,7 @@ function parseStartingSentence(sentence) {
         : s === 'du'  ? 'du'
         : s === 'wir' ? 'wir'
         : s === 'ihr' ? 'ihr'
+        : s === 'sie' ? 'sie'
         : 'er';
     return { subject, conKey, payload };
 }
@@ -1217,7 +1314,7 @@ function buildModelAnswer(stepIndex, startSentence, conjugation) {
     switch (stepIndex) {
         case 0:  return `${subject} ${wird}${p} ${inf}.`;
         case 1:  return `${subject} muss${p} ${inf}.`;
-        case 2:  return `${subject} ${hPraes}${p} ${inf} müssen.`;
+        case 2: { const modalInf = gameState.chosenModal || 'müssen'; return `${subject} ${hPraes}${p} ${inf} ${modalInf}.`; }
         case 3:  return sep ? `${subject} ${prat}${p} ${sep}.` : `${subject} ${prat}${p}.`;
         case 4:  return `${subject} ${würde}${p} ${inf}.`;
         case 5:  return `${subject} ${hPraes}${p} ${pp}.`;
@@ -1239,6 +1336,43 @@ function buildModelAnswer(stepIndex, startSentence, conjugation) {
 }
 
 // --- Core Logic ---
+
+function skipStep() {
+    if (gameState.isProcessing) return;
+    const currentStep = gameState.steps[gameState.currentStepIndex];
+    const refSentence = gameState.currentSentence || gameState.startSentence;
+    const modelAnswer = buildModelAnswer(gameState.currentStepIndex, refSentence, gameState.conjugation);
+
+    setTimeout(() => speak(modelAnswer), 200);
+
+    gameState.sentenceHistory.unshift({
+        stepName: currentStep.name + ' (skipped)',
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        userText: '—',
+        idealText: modelAnswer,
+        themeColor: currentStep.theme
+    });
+
+    if (gameState.chainMode) gameState.currentSentence = modelAnswer;
+    if (gameState.currentStepIndex === 1) gameState.chosenModal = null;
+
+    gameState.currentStepIndex++;
+    const circleComplete = gameState.currentStepIndex >= NUM_STEPS;
+    if (circleComplete) {
+        gameState.currentStepIndex = 0;
+        gameState.currentSentence = gameState.startSentence;
+        gameState.chosenModal = null;
+        clearProgress();
+    } else {
+        saveProgress();
+    }
+
+    renderHistory();
+    updateGameUI();
+    if (circleComplete) {
+        showMessage("Herzlichen Glückwunsch! You've completed the full verb circle! Starting again from step 1.");
+    }
+}
 
 function checkAnswer() {
     if (gameState.isProcessing) return;
@@ -1268,6 +1402,23 @@ function checkAnswer() {
             return;
         }
 
+        // Track which modal the learner used in step 1 so step 2 can reflect it
+        if (gameState.currentStepIndex === 1) {
+            const modalMap = {
+                'kann': 'können', 'kannst': 'können',
+                'muss': 'müssen', 'musst': 'müssen',
+                'will': 'wollen', 'willst': 'wollen',
+                'soll': 'sollen', 'sollst': 'sollen',
+                'darf': 'dürfen', 'darfst': 'dürfen',
+                'mag': 'mögen', 'magst': 'mögen',
+                'möchte': 'mögen', 'möchtest': 'mögen', 'möchten': 'mögen', 'möchtet': 'mögen'
+            };
+            const inputTokens = tokenize(input);
+            for (const token of inputTokens) {
+                if (modalMap[token]) { gameState.chosenModal = modalMap[token]; break; }
+            }
+        }
+
         const refSentence = gameState.currentSentence || gameState.startSentence;
         const modelAnswer = buildModelAnswer(gameState.currentStepIndex, refSentence, gameState.conjugation);
 
@@ -1291,12 +1442,19 @@ function checkAnswer() {
         renderHistory();
         gameState.currentStepIndex++;
 
-        if (gameState.currentStepIndex >= NUM_STEPS) {
-            alert("Herzlichen Glückwunsch! You've completed the full verb circle!");
+        const circleComplete = gameState.currentStepIndex >= NUM_STEPS;
+        if (circleComplete) {
             gameState.currentStepIndex = 0;
             gameState.currentSentence = gameState.startSentence;
+            gameState.chosenModal = null;
+            clearProgress();
+        } else {
+            saveProgress();
         }
         updateGameUI();
+        if (circleComplete) {
+            showMessage("Herzlichen Glückwunsch! You've completed the full verb circle! Starting again from step 1.");
+        }
     } catch (err) {
         console.error('checkAnswer error:', err);
         showMessage("Something went wrong. Please try again.", "error");
