@@ -19,6 +19,9 @@ Current behavior in this version:
 - **Voice input**: click "Speak" to dictate your answer in German using the browser's built-in speech recognition
 - **Voice feedback**: the app reads the reference sentence and model answer aloud in German using the browser's speech synthesis; can be muted with the speaker toggle
 - Shows a running history of attempts and model answers in the right-hand panel
+- Tracks a per-verb **score, accuracy, and streak** (best streak included)
+- Lets you **jump to any step** by clicking (or tabbing + Enter to) its label on the circle
+- **Persists** progress, score, and your voice/Chain-Mode preferences in `localStorage` across reloads
 - Resets to step 1 after the full circle is completed
 
 ## Learning flow
@@ -189,23 +192,31 @@ A right-hand column containing:
 
 ### Product limitations
 
-- Progress is not persisted beyond the current session
-- There is no learner profile, scoring, lesson selection, or spaced repetition
-- The completion flow shows an alert and resets to step 1
+- There is no learner profile, lesson selection, or spaced repetition (a per-verb score/streak counter is tracked and persisted)
+- The completion flow shows a message and resets to step 1
 
 ### Technical limitations
 
-- All app logic lives in one JavaScript file
-- There is no test suite, package manifest, or build pipeline
-- Validation is rule-based and does not catch all grammatical errors
+- All app logic lives in one JavaScript file (the pure conjugation/validation/model-answer functions are exported for testing)
+- There is no build pipeline; Tailwind is loaded via CDN
+- Validation is rule-based and does not catch all grammatical errors (e.g. it does not enforce subject–verb agreement)
+- Chain Mode re-parses each evolved sentence with a positional fallback, so its model answers are less reliable than the single-step mode
 - Voice input requires Chrome or Edge; `SpeechRecognition` is not supported in Firefox or Safari
 
 ### UX limitations
 
-- The user cannot move freely between steps
 - Mobile layout is only lightly handled
-- Accessibility is limited beyond basic keyboard shortcuts (Ctrl+Enter to submit)
+
+## Testing
+
+Pure logic (conjugation engine, sentence parsing, step validation, model-answer generation) is covered by a dependency-free unit test suite using Node's built-in test runner:
+
+```bash
+npm test        # or: node --test
+```
+
+The suite includes a regression sweep over every preset verb × every step to guard against malformed model answers.
 
 ## License
 
-No license file is currently included in this repository. If you intend to share or reuse the project, add an explicit license.
+Released under the [MIT License](LICENSE).

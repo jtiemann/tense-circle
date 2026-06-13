@@ -610,6 +610,7 @@ const NUM_STEPS = 11;
 // --- Persistence ---
 
 const STORAGE_KEY = 'tensecircle_v1';
+const PREFS_KEY = 'tensecircle_prefs';
 
 function saveProgress() {
     try {
@@ -619,7 +620,8 @@ function saveProgress() {
             currentSentence: gameState.currentSentence,
             chainMode: gameState.chainMode,
             currentStepIndex: gameState.currentStepIndex,
-            sentenceHistory: gameState.sentenceHistory
+            sentenceHistory: gameState.sentenceHistory,
+            stats: gameState.stats
         }));
     } catch (e) { /* storage unavailable */ }
 }
@@ -636,6 +638,7 @@ function loadProgress() {
         gameState.chainMode = !!data.chainMode;
         gameState.currentStepIndex = Math.min(data.currentStepIndex || 0, NUM_STEPS - 1);
         gameState.sentenceHistory = data.sentenceHistory || [];
+        gameState.stats = Object.assign({ attempts: 0, correct: 0, streak: 0, bestStreak: 0 }, data.stats || {});
         gameState.conjugation = getConjugation(data.verb);
         gameState.steps = generateSteps(data.verb, gameState.conjugation);
         gameState.requiredVerbForms = getAllVerbForms(gameState.conjugation);
@@ -649,10 +652,30 @@ function clearProgress() {
     try { localStorage.removeItem(STORAGE_KEY); } catch (e) { }
 }
 
+// User preferences (voice on/off, chain mode) — persisted independently of game progress.
+function savePrefs() {
+    try {
+        localStorage.setItem(PREFS_KEY, JSON.stringify({
+            voiceEnabled,
+            chainMode: gameState.chainMode
+        }));
+    } catch (e) { /* storage unavailable */ }
+}
+
+function loadPrefs() {
+    try {
+        const raw = localStorage.getItem(PREFS_KEY);
+        if (!raw) return;
+        const data = JSON.parse(raw);
+        if (typeof data.voiceEnabled === 'boolean') voiceEnabled = data.voiceEnabled;
+        if (typeof data.chainMode === 'boolean') gameState.chainMode = data.chainMode;
+    } catch (e) { /* ignore */ }
+}
+
 // --- Voice Engine ---
 
-const synth = window.speechSynthesis || null;
-const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+const synth = (typeof window !== 'undefined' && window.speechSynthesis) || null;
+const SpeechRec = (typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition)) || null;
 
 let voiceEnabled = true;   // speech synthesis on by default
 let micActive = false;
@@ -767,14 +790,15 @@ let gameState = {
     currentStepIndex: 0,
     sentenceHistory: [],
     isProcessing: false,
-    chosenModal: null
+    chosenModal: null,
+    stats: { attempts: 0, correct: 0, streak: 0, bestStreak: 0 }
 };
 
 // Tracks which sentence index is currently shown for the selected preset
 let currentSentenceIndex = 0;
 
 // --- DOM Elements ---
-const dom = {
+const dom = (typeof document === 'undefined') ? {} : {
     verbModal: document.getElementById('verb-selection-modal'),
     verbSelect: document.getElementById('verb-select'),
     customVerbGroup: document.getElementById('custom-verb-group'),
@@ -796,6 +820,10 @@ const dom = {
     centerVerbLabel: document.getElementById('center-verb-label'),
 
     progressTracker: document.getElementById('progress-tracker'),
+    statScore: document.getElementById('stat-score'),
+    statAccuracy: document.getElementById('stat-accuracy'),
+    statStreak: document.getElementById('stat-streak'),
+    statBest: document.getElementById('stat-best'),
     stepTitle: document.getElementById('current-step-title'),
     instructionText: document.getElementById('instruction-text'),
     sentenceInput: document.getElementById('sentence-input'),
@@ -853,8 +881,11 @@ function populateVerbDropdown() {
 
 function initApp() {
     populateVerbDropdown();
+    loadPrefs();
     setupEventListeners();
     updateVoiceUI();
+    // Reflect the saved chain-mode preference in the modal toggle.
+    if (dom.chainModeCheckbox) dom.chainModeCheckbox.checked = gameState.chainMode;
     if (loadProgress()) {
         hideVerbModalAndStart();
     } else {
@@ -929,7 +960,9 @@ function setupEventListeners() {
         gameState.currentStepIndex = 0;
         gameState.sentenceHistory = [];
         gameState.chosenModal = null;
+        gameState.stats = { attempts: 0, correct: 0, streak: 0, bestStreak: 0 };
         clearProgress();
+        savePrefs(); // remember the chosen chain-mode setting
         hideVerbModalAndStart();
     });
 
@@ -946,6 +979,7 @@ function setupEventListeners() {
             gameState.sentenceHistory = [];
             gameState.currentSentence = gameState.startSentence;
             gameState.chosenModal = null;
+            gameState.stats = { attempts: 0, correct: 0, streak: 0, bestStreak: 0 };
             saveProgress();
             updateGameUI();
             renderHistory();
@@ -960,7 +994,8 @@ function setupEventListeners() {
 
     dom.sentenceInput.addEventListener('input', () => {
         const val = dom.sentenceInput.value.trim();
-        const hasVerb = gameState.requiredVerbForms.some(f => val.toLowerCase().includes(f.toLowerCase()));
+        const valTokens = tokenize(val);
+        const hasVerb = gameState.requiredVerbForms.some(f => valTokens.includes(f.toLowerCase()));
         if (val.length >= 10 && hasVerb) {
             dom.inputValidIcon.classList.remove('opacity-0');
             dom.inputValidIcon.classList.add('opacity-100');
@@ -991,6 +1026,7 @@ function setupEventListeners() {
             voiceEnabled = !voiceEnabled;
             if (!voiceEnabled && synth) synth.cancel();
             updateVoiceUI();
+            savePrefs();
         });
     }
 }
@@ -1015,6 +1051,7 @@ function hideVerbModalAndStart() {
             }
             renderCircle();
             updateGameUI();
+            renderHistory(); // restore history panel for resumed sessions
         }, 50);
     }, 300);
 }
@@ -1040,8 +1077,29 @@ function renderCircle() {
         el.style.transform = `translate(-50%, -50%)`;
         el.setAttribute('data-index', i);
         el.setAttribute('data-base-transform', `translate(-50%, -50%)`);
+
+        // Allow jumping to any step (mouse + keyboard).
+        el.setAttribute('role', 'button');
+        el.setAttribute('tabindex', '0');
+        el.setAttribute('aria-label', `Go to step ${i + 1}: ${step.name}`);
+        el.title = `Go to step ${i + 1}: ${step.name}`;
+        el.style.cursor = 'pointer';
+        el.addEventListener('click', () => navigateToStep(i));
+        el.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigateToStep(i); }
+        });
+
         dom.circleUI.appendChild(el);
     });
+}
+
+// Jump directly to a step without scoring it (review / free navigation).
+function navigateToStep(index) {
+    if (gameState.isProcessing) return;
+    if (index < 0 || index >= NUM_STEPS || index === gameState.currentStepIndex) return;
+    gameState.currentStepIndex = index;
+    saveProgress();
+    updateGameUI();
 }
 
 function updateGameUI() {
@@ -1069,6 +1127,7 @@ function updateGameUI() {
     }, 150);
 
     dom.progressTracker.textContent = `Step ${gameState.currentStepIndex + 1} of ${NUM_STEPS}`;
+    renderStats();
 
     const refSentence = gameState.currentSentence || gameState.startSentence;
     const isChained = gameState.chainMode && gameState.currentStepIndex > 0;
@@ -1094,6 +1153,14 @@ function updateGameUI() {
     dom.sentenceInput.classList.remove('border-brand-300', 'bg-brand-50/30', 'border-red-300');
     hideMessage();
     if (window.innerWidth > 768) setTimeout(() => dom.sentenceInput.focus(), 300);
+}
+
+function renderStats() {
+    const s = gameState.stats || { attempts: 0, correct: 0, streak: 0, bestStreak: 0 };
+    if (dom.statScore) dom.statScore.textContent = `${s.correct}/${s.attempts}`;
+    if (dom.statAccuracy) dom.statAccuracy.textContent = s.attempts ? `${Math.round((s.correct / s.attempts) * 100)}%` : '—';
+    if (dom.statStreak) dom.statStreak.textContent = `${s.streak}`;
+    if (dom.statBest) dom.statBest.textContent = `${s.bestStreak}`;
 }
 
 function showMessage(text, type = 'success') {
@@ -1257,9 +1324,11 @@ function validateStep(stepIndex, input, conjugation) {
             return { valid: true };
         }
 
-        case 9: // Konjunktiv II
+        case 9: // Konjunktiv II — unreal wish (distinct from the plain Conditional in step 5)
             if (!hasKII && !hasWuerde)
                 return { valid: false, error: `Use the Konjunktiv II form of '${inf}' or 'würde + ${inf}'.` };
+            if (!hasToken(tokens, 'wenn'))
+                return { valid: false, error: `For an unreal wish, frame it with 'wenn' (e.g., "Wenn er nur ... ${conjugation.konjunktivII.er}!"). This is what sets this step apart from the plain Conditional.` };
             return { valid: true };
 
         case 10: // Konjunktiv I
@@ -1272,25 +1341,57 @@ function validateStep(stepIndex, input, conjugation) {
     }
 }
 
-// Parse starting sentence into { subject, payload }
-// e.g. "Ich lerne Deutsch jeden Tag." → { subject: 'Ich', conKey: 'ich', payload: 'Deutsch jeden Tag' }
-function parseStartingSentence(sentence) {
-    const clean = sentence.replace(/[.!?]$/, '').trim();
+// Parse starting sentence into { subject, conKey, payload }.
+// Locates the actual finite verb (rather than assuming it is the 2nd word) so that
+// multi-word subjects ("Der Apfel", "Die Kinder") and separable verbs are handled
+// correctly. e.g.:
+//   "Ich lerne Deutsch jeden Tag."  → { subject: 'Ich',       conKey: 'ich', payload: 'Deutsch jeden Tag' }
+//   "Der Apfel fällt vom Baum."     → { subject: 'Der Apfel', conKey: 'er',  payload: 'vom Baum' }
+//   "Ich mache die Tür auf."        → { subject: 'Ich',       conKey: 'ich', payload: 'die Tür' }  (prefix stripped)
+function parseStartingSentence(sentence, conjugation) {
+    const norm = w => w.toLowerCase().replace(/[.,!?;:]/g, '');
+    const clean = sentence.replace(/[.!?]+$/, '').trim();
     const words = clean.split(/\s+/);
-    const subject = words[0] || 'Er';
-    const payload = words.slice(2).join(' '); // skip subject + verb
+
+    const praes = (conjugation && conjugation.praesens) || {};
+    const praesForms = Object.values(praes).map(f => f.toLowerCase());
+    const sep = conjugation && conjugation.isSeparable ? conjugation.prefix : null;
+
+    // Find the finite verb: first token that matches a present-tense form of the verb.
+    let verbIdx = words.findIndex(w => praesForms.includes(norm(w)));
+    if (verbIdx === -1) verbIdx = Math.min(1, Math.max(0, words.length - 1)); // fallback: assume V2
+
+    const subject = words.slice(0, verbIdx).join(' ') || 'Er';
+    let payloadWords = words.slice(verbIdx + 1);
+
+    // Separable verb: the trailing prefix particle rejoins the verb in every transformed
+    // form, so remove it from the payload to avoid duplicating/orphaning it.
+    if (sep && payloadWords.length && norm(payloadWords[payloadWords.length - 1]) === sep.toLowerCase()) {
+        payloadWords = payloadWords.slice(0, -1);
+    }
+    const payload = payloadWords.join(' ');
+
+    // Determine person/number from the subject; for noun subjects, infer number from the verb form.
     const s = subject.toLowerCase();
-    const conKey = s === 'ich' ? 'ich'
-        : s === 'du'  ? 'du'
-        : s === 'wir' ? 'wir'
-        : s === 'ihr' ? 'ihr'
-        : s === 'sie' ? 'sie'
-        : 'er';
+    let conKey;
+    if (s === 'ich') conKey = 'ich';
+    else if (s === 'du') conKey = 'du';
+    else if (s === 'wir') conKey = 'wir';
+    else if (s === 'ihr') conKey = 'ihr';
+    else if (s === 'sie') conKey = 'sie';
+    else if (s === 'er' || s === 'es') conKey = 'er';
+    else {
+        const matched = words[verbIdx] ? norm(words[verbIdx]) : null;
+        const erForm = (praes.er || '').toLowerCase();
+        const sieForm = (praes.sie || '').toLowerCase();
+        // Plural noun (e.g., "Die Kinder lernen") matches the sie/plural form, not the er form.
+        conKey = (matched && matched === sieForm && matched !== erForm) ? 'sie' : 'er';
+    }
     return { subject, conKey, payload };
 }
 
-function buildModelAnswer(stepIndex, startSentence, conjugation) {
-    const { subject, conKey, payload } = parseStartingSentence(startSentence);
+function buildModelAnswer(stepIndex, startSentence, conjugation, chosenModal) {
+    const { subject, conKey, payload } = parseStartingSentence(startSentence, conjugation);
     const inf  = conjugation.infinitive;
     const pp   = conjugation.partizipII;
     const sep  = conjugation.isSeparable ? conjugation.prefix : null;
@@ -1314,7 +1415,7 @@ function buildModelAnswer(stepIndex, startSentence, conjugation) {
     switch (stepIndex) {
         case 0:  return `${subject} ${wird}${p} ${inf}.`;
         case 1:  return `${subject} muss${p} ${inf}.`;
-        case 2: { const modalInf = gameState.chosenModal || 'müssen'; return `${subject} ${hPraes}${p} ${inf} ${modalInf}.`; }
+        case 2: { const modalInf = chosenModal || 'müssen'; return `${subject} ${hPraes}${p} ${inf} ${modalInf}.`; }
         case 3:  return sep ? `${subject} ${prat}${p} ${sep}.` : `${subject} ${prat}${p}.`;
         case 4:  return `${subject} ${würde}${p} ${inf}.`;
         case 5:  return `${subject} ${hPraes}${p} ${pp}.`;
@@ -1341,7 +1442,7 @@ function skipStep() {
     if (gameState.isProcessing) return;
     const currentStep = gameState.steps[gameState.currentStepIndex];
     const refSentence = gameState.currentSentence || gameState.startSentence;
-    const modelAnswer = buildModelAnswer(gameState.currentStepIndex, refSentence, gameState.conjugation);
+    const modelAnswer = buildModelAnswer(gameState.currentStepIndex, refSentence, gameState.conjugation, gameState.chosenModal);
 
     setTimeout(() => speak(modelAnswer), 200);
 
@@ -1384,7 +1485,8 @@ function checkAnswer() {
         dom.sentenceInput.focus(); return;
     }
 
-    const hasVerb = gameState.requiredVerbForms.some(f => input.toLowerCase().includes(f.toLowerCase()));
+    const inputTokens = tokenize(input);
+    const hasVerb = gameState.requiredVerbForms.some(f => inputTokens.includes(f.toLowerCase()));
     if (!hasVerb) {
         showMessage(`Your sentence must contain a form of '${gameState.verb}'.`, "error");
         dom.sentenceInput.focus(); return;
@@ -1397,8 +1499,20 @@ function checkAnswer() {
     try {
         const result = validateStep(gameState.currentStepIndex, input, gameState.conjugation);
 
+        // Record the attempt and update the streak.
+        gameState.stats.attempts++;
+        if (result.valid) {
+            gameState.stats.correct++;
+            gameState.stats.streak++;
+            gameState.stats.bestStreak = Math.max(gameState.stats.bestStreak, gameState.stats.streak);
+        } else {
+            gameState.stats.streak = 0;
+        }
+
         if (!result.valid) {
             showMessage(result.error, "error");
+            renderStats();
+            saveProgress();
             return;
         }
 
@@ -1420,7 +1534,7 @@ function checkAnswer() {
         }
 
         const refSentence = gameState.currentSentence || gameState.startSentence;
-        const modelAnswer = buildModelAnswer(gameState.currentStepIndex, refSentence, gameState.conjugation);
+        const modelAnswer = buildModelAnswer(gameState.currentStepIndex, refSentence, gameState.conjugation, gameState.chosenModal);
 
         // Read the model answer aloud after a short delay
         setTimeout(() => speak(modelAnswer), 400);
@@ -1488,5 +1602,25 @@ function renderHistory() {
     });
 }
 
-// Boot
-document.addEventListener('DOMContentLoaded', initApp);
+// Boot (browser only)
+if (typeof document !== 'undefined') {
+    document.addEventListener('DOMContentLoaded', initApp);
+}
+
+// Export pure logic for Node-based unit tests (no-op in the browser).
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+        getConjugation,
+        conjugateRegular,
+        getSeparableInfo,
+        getAllVerbForms,
+        generateSteps,
+        tokenize,
+        validateStep,
+        parseStartingSentence,
+        buildModelAnswer,
+        VERB_PRESETS,
+        IRREGULAR_VERBS,
+        NUM_STEPS,
+    };
+}

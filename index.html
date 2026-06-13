@@ -100,7 +100,7 @@
                     </div>
                     <div>
                         <span class="text-sm font-medium text-slate-700 group-hover:text-slate-900 transition-colors">Chain Mode</span>
-                        <p class="text-xs text-slate-400 mt-0.5">Each step uses the AI's ideal sentence from the previous step as the new reference.</p>
+                        <p class="text-xs text-slate-400 mt-0.5">Each step uses the model answer from the previous step as the new reference.</p>
                     </div>
                 </label>
 
@@ -135,7 +135,7 @@
             <div class="flex-grow flex items-center justify-center p-6 lg:p-12 glass-panel rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] animate-fade-in relative overflow-hidden group">
                 <div class="absolute inset-0 grid-bg opacity-30 pointer-events-none"></div>
 
-                <div id="circle-ui" class="circle-container relative w-full aspect-square max-w-[600px] max-h-[600px] z-10 transition-transform duration-700 ease-out-back">
+                <div id="circle-ui" role="group" aria-label="Grammar steps — select a step to jump to it" class="circle-container relative w-full aspect-square max-w-[600px] max-h-[600px] z-10 transition-transform duration-700 ease-out-back">
 
                     <!-- Center Verb Hub (dynamic) -->
                     <div id="center-verb"
@@ -170,7 +170,7 @@
                 <div class="glass-panel rounded-3xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.06)] flex flex-col relative overflow-hidden">
 
                     <!-- Progress Header -->
-                    <div class="flex justify-between items-center mb-6 pb-4 border-b border-slate-100">
+                    <div class="flex justify-between items-center mb-2 pb-4 border-b border-slate-100">
                         <div class="flex items-center gap-2">
                             <span class="flex h-3 w-3 rounded-full bg-brand-500 shrink-0"></span>
                             <span id="progress-tracker" class="text-sm font-bold text-slate-700 uppercase tracking-wide">Step 1 of 11</span>
@@ -191,9 +191,17 @@
                         </div>
                     </div>
 
+                    <!-- Stats: attempts / accuracy / streak -->
+                    <div id="stats-tracker" class="flex items-center gap-4 text-xs text-slate-500 mb-6 pb-3 border-b border-slate-100">
+                        <span title="Correct answers out of attempts"><span class="font-bold text-slate-700" id="stat-score">0/0</span> correct</span>
+                        <span title="Accuracy"><span class="font-bold text-slate-700" id="stat-accuracy">—</span> accuracy</span>
+                        <span title="Current streak of correct answers in a row">🔥 <span class="font-bold text-slate-700" id="stat-streak">0</span> streak</span>
+                        <span title="Best streak this verb" class="ml-auto">Best: <span class="font-bold text-slate-700" id="stat-best">0</span></span>
+                    </div>
+
                     <!-- Current Task Info -->
                     <div class="mb-6">
-                        <h2 id="current-step-title" class="text-2xl font-bold text-slate-800 mb-3 transition-all duration-300">Start</h2>
+                        <h2 id="current-step-title" class="text-2xl font-bold text-slate-800 mb-3 transition-all duration-300" aria-live="polite">Start</h2>
 
                         <div class="bg-indigo-50/80 backdrop-blur-sm border border-indigo-100/50 rounded-2xl p-5 relative overflow-hidden group">
                             <div class="absolute left-0 top-0 bottom-0 w-1.5 bg-indigo-400 rounded-l-2xl"></div>
@@ -203,7 +211,7 @@
                                 </svg>
                                 Current Task
                             </h3>
-                            <div id="instruction-text" class="text-slate-700 text-[15px] leading-relaxed transition-opacity duration-300"></div>
+                            <div id="instruction-text" class="text-slate-700 text-[15px] leading-relaxed transition-opacity duration-300" aria-live="polite"></div>
                         </div>
                     </div>
 

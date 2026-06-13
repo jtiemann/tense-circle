@@ -1,0 +1,11 @@
+{
+  "name": "tense-circle",
+  "version": "1.0.0",
+  "description": "Browser-based German tense/clause transformation trainer (fully local, no build).",
+  "license": "MIT",
+  "author": "Jon Tiemann",
+  "private": true,
+  "scripts": {
+    "test": "node --test"
+  }
+}
