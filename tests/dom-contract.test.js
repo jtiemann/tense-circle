@@ -35,8 +35,11 @@ test('history template exposes every class populated by renderHistory', () => {
 
 test('the evaluator loads before the application controller', () => {
     const evaluatorPosition = htmlSource.indexOf('<script src="jev-evaluator.js"></script>');
+    const voicePosition = htmlSource.indexOf('<script src="voice-controller.js"></script>');
     const appPosition = htmlSource.indexOf('<script src="app.js"></script>');
 
     assert.ok(evaluatorPosition >= 0);
+    assert.ok(voicePosition > evaluatorPosition);
     assert.ok(appPosition > evaluatorPosition);
+    assert.ok(appPosition > voicePosition);
 });

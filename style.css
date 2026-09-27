@@ -130,6 +130,110 @@ body {
     border-left: 4px solid #14b8a6;
 }
 
+/* --- Voice Experience --- */
+
+.voice-panel {
+    border: 1px solid rgba(153, 246, 228, 0.7);
+    border-radius: 1rem;
+    padding: 0.9rem;
+    background: linear-gradient(135deg, rgba(240, 253, 250, 0.9), rgba(239, 246, 255, 0.75));
+}
+
+.voice-mode-select:disabled,
+.voice-panel button:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+.voice-secondary-button,
+.voice-primary-button {
+    min-height: 2.5rem;
+    border-radius: 0.75rem;
+    padding: 0.55rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    transition: transform 160ms ease, background-color 160ms ease, border-color 160ms ease;
+}
+
+.voice-secondary-button {
+    border: 1px solid #cbd5e1;
+    background: rgba(255, 255, 255, 0.85);
+    color: #334155;
+}
+
+.voice-secondary-button:hover:not(:disabled) {
+    border-color: var(--brand-400);
+    background: #ffffff;
+    transform: translateY(-1px);
+}
+
+.voice-primary-button {
+    border: 1px solid var(--brand-600);
+    background: var(--brand-600);
+    color: #ffffff;
+}
+
+.voice-primary-button:hover:not(:disabled) {
+    background: #0f766e;
+    transform: translateY(-1px);
+}
+
+.voice-answer-button {
+    min-height: 3.4rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.65rem;
+    border: 1px solid rgba(20, 184, 166, 0.45);
+    border-radius: 0.9rem;
+    background: #ffffff;
+    color: #0f766e;
+    font-size: 0.9rem;
+    font-weight: 800;
+    box-shadow: 0 5px 16px rgba(13, 148, 136, 0.12);
+    transition: all 180ms ease;
+}
+
+.voice-answer-button:hover:not(:disabled) {
+    border-color: var(--brand-500);
+    box-shadow: 0 7px 20px rgba(13, 148, 136, 0.2);
+    transform: translateY(-1px);
+}
+
+.voice-answer-button.is-listening {
+    border-color: #ef4444;
+    background: #fef2f2;
+    color: #b91c1c;
+    box-shadow: 0 0 0 5px rgba(239, 68, 68, 0.1);
+}
+
+.voice-mic-icon {
+    width: 1.35rem;
+    height: 1.35rem;
+}
+
+.voice-answer-button.is-listening .voice-mic-icon {
+    animation: voice-pulse 1.25s ease-in-out infinite;
+}
+
+.voice-status {
+    min-height: 1.25rem;
+    color: #0f766e;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+@keyframes voice-pulse {
+    0%, 100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+    50% {
+        transform: scale(1.16);
+        opacity: 0.65;
+    }
+}
+
 /* --- Animations --- */
 
 @keyframes spin {

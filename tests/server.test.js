@@ -28,6 +28,10 @@ test('serves the application from the same origin as the API proxy', async () =>
         assert.equal(response.status, 200);
         assert.match(response.headers.get('content-type'), /text\/html/);
         assert.match(body, /Welcome to Tense Circle/);
+
+        const voiceScript = await fetch(`${origin}/voice-controller.js`);
+        assert.equal(voiceScript.status, 200);
+        assert.match(voiceScript.headers.get('content-type'), /javascript/);
     });
 });
 

@@ -39,8 +39,9 @@ The HTML file provides:
 - the circular UI shell, center verb hub, physical track, and orbit indicator;
 - the current-step panel and sentence input;
 - the answer button, loading state, and feedback message region;
+- the voice-mode selector, speech controls, microphone status, and transcript-review actions;
 - the learning-history list and its `<template>`;
-- external font/Tailwind loading plus the `jev-evaluator.js` and `app.js` script entry points.
+- external font/Tailwind loading plus the `jev-evaluator.js`, `voice-controller.js`, and `app.js` script entry points.
 
 Step labels are intentionally not hard-coded in HTML. `app.js` creates them from the `steps` array.
 
@@ -48,13 +49,34 @@ Step labels are intentionally not hard-coded in HTML. `app.js` creates them from
 
 This dependency-free module is shared by the browser and Node tests. It builds structured Jev requests, validates typed responses, normalizes dimension scores, applies the code-owned acceptance policy, and chooses deterministic feedback. It does not perform network requests or manipulate the DOM.
 
+### `voice-controller.js`: optional speech adapter
+
+This dependency-free browser module wraps speech synthesis and speech recognition behind a small controller. It owns voice modes, speaking/listening state, German answer recognition, English/German command aliases, and actionable recognition errors. It sends final text back to `app.js`; it never calls Jev and never changes scoring policy.
+
+The interaction state is:
+
+```text
+idle → speaking → idle
+idle → requesting-permission → listening-answer → review
+review → submit/retry/read-back/listening-command
+listening-command → submit/retry/repeat/hint/stop
+```
+
+Only one of synthesis or recognition should be active at a time. Starting speech cancels recognition, and starting recognition cancels speech.
+
+Before its first recognition session, the controller uses `getUserMedia({ audio: true })` as a microphone/permission preflight and immediately releases that stream. Recognition still belongs to the browser implementation; no raw audio reaches the app server.
+
+### `server.cjs`: static host and Jev proxy
+
+The dependency-free Node server exposes only the browser assets required by the app and a `POST /api/jev` endpoint. The endpoint validates the presence of bearer authorization and JSON input, forwards the request to TypeSafe, and relays the upstream status and body. It does not persist keys, learner input, or responses.
+
 ### `app.js`: application controller and state
 
 The JavaScript is organized into five practical areas:
 
 1. **Configuration** — aligned `haben` exercises, explicit acceptance criteria, hints, and examples.
 2. **State and DOM references** — `gameState` and the `dom` lookup object.
-3. **Initialization and event wiring** — `initApp()`, `setupEventListeners()`, API-key handling, reset, keyboard submission, and input feedback.
+3. **Initialization and event wiring** — `initApp()`, `setupEventListeners()`, voice initialization, API-key handling, reset, keyboard submission, and input feedback.
 4. **Rendering** — `renderCircle()`, `updateGameUI()`, `showMessage()`, `hideMessage()`, `setLoadingState()`, and `renderHistory()`.
 5. **API and game flow** — `callJevAPI()` and `checkAnswer()`.
 
@@ -83,7 +105,7 @@ gameState = {
 }
 ```
 
-- `apiKey` is loaded from or written to `localStorage`; the rest of `gameState` is runtime-only.
+- `apiKey` is loaded from or written to `localStorage`; the rest of `gameState` is runtime-only. Voice mode is stored separately under `tense_circle_voice_mode`.
 - `currentStepIndex` selects the active entry in `steps`.
 - `sentenceHistory` is newest-first. Each successful entry stores the step name, display timestamp, user input, normalized Jev evaluation, and a theme value.
 - `isProcessing` prevents duplicate submissions and disables the input/button while Jev is running.
@@ -93,9 +115,10 @@ gameState = {
 ```text
 DOMContentLoaded
   └─ initApp()
+      ├─ attach event listeners
+      ├─ create the voice controller and restore voice mode
       ├─ read typesafe_jev_api_key_tense_circle from localStorage
-      ├─ if present: set gameState.apiKey and start the game
-      └─ attach event listeners
+      └─ if present: set gameState.apiKey and start the game
 
 start the game
   └─ hideModalAndStart()
@@ -110,7 +133,8 @@ If there is no saved key, the modal remains visible. The game container is initi
 ## Game flow
 
 ```text
-Learner enters text
+Learner types or dictates
+  ├─ voice input: microphone preflight → German recognition → transcript review
   └─ input listener gives visual feedback
 
 Check Answer
@@ -173,6 +197,7 @@ The request authenticates with `Authorization: Bearer <API_KEY>`. HTTP 401 and 4
 
 - The API key crosses from the user into browser `localStorage`, through the local proxy, and into TypeSafe AI. The proxy does not persist or log it.
 - Learner text crosses from the browser through the local proxy to TypeSafe AI.
+- In voice modes, browser speech recognition may send raw microphone audio to a browser-vendor service. The application itself keeps only the transcript and sends only confirmed text to Jev.
 - Jev output is normalized to three dimensions, a composite score, and decision certainty before being stored/rendered.
 - Noul probability is not mislabeled as a separate confidence value; certainty is derived explicitly in application code.
 - Model thresholds and weights are product policy, not proof of grammatical correctness.
@@ -189,4 +214,5 @@ The clearest boundaries for future work are:
 - tune per-step policy thresholds if error patterns differ materially by construction;
 - persist or explicitly export learning history if product requirements call for it;
 - add browser tests around step progression, completion, reset, API failures, and history rendering;
+- replace browser-native recognition with a provider-backed adapter if consistent embedded-browser support becomes a requirement;
 - define whether each answer should build on the previous answer or independently transform the base sentence.

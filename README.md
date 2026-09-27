@@ -12,6 +12,7 @@ This repository is a dependency-light browser application with a small Node serv
 - Local input checks for minimum length and a form of `haben`.
 - Three focused Jev questions in one request: two descriptive Scores and one Noul.
 - Deterministic composite scoring, confidence-aware routing, and targeted retry hints.
+- Optional Off, Assisted, and Voice-first modes with spoken prompts, German dictation, transcript review, read-back, and short voice commands.
 - In-session learning history with dimension scores and decision certainty.
 - Reset-progress and change-API-key controls.
 - Responsive layout with Tailwind utility classes, custom CSS, animations, and a mobile scale-down for the circle.
@@ -19,6 +20,7 @@ This repository is a dependency-light browser application with a small Node serv
 ## Requirements
 
 - A modern browser with JavaScript, `fetch`, `localStorage`, and `<template>` support.
+- Speech synthesis for spoken prompts; German dictation additionally requires `SpeechRecognition` or `webkitSpeechRecognition`. A full Chrome, Edge, or Safari window is recommended because some embedded browsers expose the API but cannot provide a recognition service. Unsupported voice features degrade to typing.
 - Network access to:
   - Google Fonts;
   - the Tailwind CDN;
@@ -48,6 +50,14 @@ There are no npm commands or dependencies to install at present.
 6. Continue through all 11 steps. After the final step, the app shows a completion alert and returns the active step to step 1 while keeping the history visible.
 7. Use **Reset Game** to clear the current step and in-memory history. Use **Change API Key** to replace the browser-stored key.
 
+### Voice modes
+
+- **Off** keeps the original typed workflow.
+- **Assisted** exposes **Hear question**, **Hint**, German dictation, transcript read-back, and commands without speaking automatically.
+- **Voice-first** automatically speaks each question, reads back a completed transcript, speaks Jev feedback, and introduces the next step.
+
+For a voice answer, select **Tap to answer in German**, allow microphone access, speak one sentence, and review the recognized text. Tap again to stop if necessary. Then submit, retry, read it back, or select **Say a command** and say “submit,” “try again,” “repeat,” “hint,” or “voice off.” The transcript remains editable, and Jev receives confirmed text rather than raw audio.
+
 ## Repository layout
 
 | File | Responsibility |
@@ -55,9 +65,10 @@ There are no npm commands or dependencies to install at present.
 | [`index.html`](./index.html) | Page structure, API-key modal, game layout, circle tracks, interaction controls, history template, CDN scripts/styles. |
 | [`app.js`](./app.js) | Exercise configuration, browser state, event handlers, Jev transport, progress advancement, and rendering. |
 | [`jev-evaluator.js`](./jev-evaluator.js) | Structured Jev request builder, response validation, composite decision policy, and feedback selection. |
+| [`voice-controller.js`](./voice-controller.js) | Browser speech synthesis, German speech recognition, command parsing, and voice state management. |
 | [`server.cjs`](./server.cjs) | Local static server and same-origin proxy to the TypeSafe Jev API. |
 | [`style.css`](./style.css) | Custom colors, glass panels, circle labels, status messages, animations, scrollbar styling, and responsive overrides. |
-| [`tests/`](./tests) | Dependency-free tests for request shape, word validation, decision routing, malformed responses, DOM IDs, history-template hooks, and script order. |
+| [`tests/`](./tests) | Dependency-free tests for Jev request/decision behavior, DOM contracts, voice states and commands, microphone preflight, static serving, and proxy forwarding. |
 | [`scripts/calibrate-jev.cjs`](./scripts/calibrate-jev.cjs) | Optional live, labeled Jev calibration cases for tuning policy thresholds. |
 | [`ARCHITECTURE.md`](./ARCHITECTURE.md) | Component boundaries, state flow, API contract, and current design constraints. |
 | [`RUNBOOK.md`](./RUNBOOK.md) | Local operation, smoke testing, troubleshooting, and maintenance procedures. |
@@ -72,13 +83,14 @@ The main game configuration is at the top of [`app.js`](./app.js):
 - `steps` defines each step’s prompt, acceptance criteria, hint, valid example, and visual theme.
 - `requiredVerbForms` defines the complete German words accepted by local validation.
 - `callJevAPI()` owns only the HTTP transport.
+- `voicePrompt` provides a natural spoken version of each visual exercise instruction.
 - `DEFAULT_POLICY` in [`jev-evaluator.js`](./jev-evaluator.js) defines dimension thresholds, clear-failure boundaries, minimum certainty, and composite weights.
 
 The Tailwind theme and CDN configuration are embedded in the `<head>` of [`index.html`](./index.html). Visual behavior that is not expressed through Tailwind classes lives in [`style.css`](./style.css).
 
 ## Testing
 
-Run the local decision tests:
+Run the complete automated suite:
 
 ```bash
 node --test tests/*.test.js
@@ -96,7 +108,7 @@ The evaluator design follows TypeSafe’s guidance to use [structured state](htt
 
 ## Security and privacy notes
 
-The API key is entered into the browser, stored in `localStorage`, and sent to the same-origin local proxy in the `Authorization` header. The proxy forwards it to TypeSafe without storing or logging it. This removes browser CORS failures but is still a personal-development design: anyone with access to the browser profile or page JavaScript may be able to access the key. User sentences are sent to Jev for evaluation. See the [TypeSafe quick start](https://docs.typesafe.ai/introduction/quickstart) for the current API contract.
+The API key is entered into the browser, stored in `localStorage`, and sent to the same-origin local proxy in the `Authorization` header. The proxy forwards it to TypeSafe without storing or logging it. This removes browser CORS failures but is still a personal-development design: anyone with access to the browser profile or page JavaScript may be able to access the key. User sentences are sent to Jev for evaluation. In voice modes, the browser may send microphone audio to its own recognition provider; the app itself retains only the transcript. See the [TypeSafe quick start](https://docs.typesafe.ai/introduction/quickstart) for the current API contract.
 
 Before a public or multi-user deployment, move API access behind a server-side boundary, add authentication and quota controls, define a privacy policy, and avoid exposing provider credentials to the client.
 
@@ -108,6 +120,7 @@ Before a public or multi-user deployment, move API access behind a server-side b
 - The decision policy is heuristic and needs calibration against a larger teacher-labeled German dataset.
 - The rule-adherence gate requires a Score of at least `2.25` out of `3`; level 2 represents a recognizable construction that still contains a material rule error.
 - Jev’s primary training language is English, so German-language judgments require empirical monitoring and may remain weaker than English judgments.
+- Browser speech synthesis is broadly available, but browser-native speech recognition is not consistently supported. Some browsers use a remote recognition service, so voice mode may send microphone audio to the browser vendor as well as sending the confirmed transcript to Jev.
 - API errors are reduced to broad UI messages. There is no retry backoff, request timeout, offline mode, or structured telemetry.
 - Tailwind and fonts are loaded from CDNs, so a blocked or unavailable network changes the appearance and may affect operation.
 

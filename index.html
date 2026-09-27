@@ -215,6 +215,64 @@
                         </div>
                     </div>
 
+                    <!-- Optional Voice Experience -->
+                    <section id="voice-panel" class="voice-panel mb-5" aria-labelledby="voice-heading">
+                        <div class="flex items-center justify-between gap-3">
+                            <div>
+                                <h3 id="voice-heading" class="text-sm font-bold text-slate-800">Voice experience</h3>
+                                <p id="voice-capability" class="text-xs text-slate-500 mt-0.5">Choose how much voice assistance you want.</p>
+                            </div>
+                            <label class="sr-only" for="voice-mode">Voice mode</label>
+                            <select id="voice-mode"
+                                class="voice-mode-select rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 focus:ring-2 focus:ring-brand-500">
+                                <option value="off">Off</option>
+                                <option value="assisted">Assisted</option>
+                                <option value="voice-first">Voice-first</option>
+                            </select>
+                        </div>
+
+                        <div id="voice-actions" class="hidden mt-4 space-y-3">
+                            <div class="flex gap-2">
+                                <button id="hear-prompt-btn" type="button"
+                                    class="voice-secondary-button flex-1" aria-label="Read the current question aloud">
+                                    Hear question
+                                </button>
+                                <button id="hint-voice-btn" type="button"
+                                    class="voice-secondary-button flex-1" aria-label="Show and speak an example">
+                                    Hint
+                                </button>
+                            </div>
+
+                            <button id="voice-answer-btn" type="button" class="voice-answer-button w-full"
+                                aria-label="Start German speech recognition" aria-pressed="false">
+                                <span class="voice-mic-icon" aria-hidden="true">
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                                        stroke="currentColor" stroke-width="2">
+                                        <path stroke-linecap="round" stroke-linejoin="round"
+                                            d="M12 2a3 3 0 00-3 3v7a3 3 0 006 0V5a3 3 0 00-3-3z" />
+                                        <path stroke-linecap="round" stroke-linejoin="round"
+                                            d="M19 10v2a7 7 0 01-14 0v-2m7 9v3m-4 0h8" />
+                                    </svg>
+                                </span>
+                                <span id="voice-answer-label">Tap to answer in German</span>
+                            </button>
+
+                            <div id="voice-review-actions" class="hidden grid grid-cols-2 gap-2">
+                                <button id="voice-submit-btn" type="button" class="voice-primary-button">Submit transcript</button>
+                                <button id="voice-retry-btn" type="button" class="voice-secondary-button">Try again</button>
+                                <button id="voice-readback-btn" type="button" class="voice-secondary-button">Read it back</button>
+                                <button id="voice-command-btn" type="button" class="voice-secondary-button">Say a command</button>
+                            </div>
+
+                            <p id="voice-status" class="voice-status" role="status" aria-live="polite">
+                                Voice is ready.
+                            </p>
+                            <p class="text-[11px] leading-relaxed text-slate-400">
+                                Commands: submit, try again, repeat, hint, or voice off. Always review the transcript before Jev checks it.
+                            </p>
+                        </div>
+                    </section>
+
                     <!-- Input Area -->
                     <div class="mb-5 relative">
                         <label for="sentence-input" class="block text-sm font-bold text-slate-700 mb-2">Your Expanded
@@ -369,6 +427,7 @@
     </template>
 
     <script src="jev-evaluator.js"></script>
+    <script src="voice-controller.js"></script>
     <script src="app.js"></script>
 </body>
 

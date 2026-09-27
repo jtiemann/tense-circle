@@ -46,6 +46,20 @@ Use `Ich werde morgen einen Apfel haben.` for the first step, then verify:
 9. Completing step 11 shows the completion alert, returns the active step to step 1, and retains the history entries.
 10. Reloading the page keeps the API-key modal suppressed but loses step progress and sentence history.
 
+## Voice smoke test
+
+1. Change **Voice experience** from **Off** to **Assisted**.
+2. Select **Hear question** and confirm the instruction is spoken.
+3. Select **Tap to answer in German**, allow microphone access, and say `Ich werde morgen einen Apfel haben.`
+4. Confirm the status progresses through permission, microphone connection, and speech detection; tap again to stop if necessary.
+5. Confirm interim text appears in the textarea and the final transcript exposes review controls.
+6. Select **Read it back** and confirm the answer uses a German voice when one is installed.
+7. Select **Say a command**, say “submit,” and confirm the normal Jev evaluation begins.
+8. Switch to **Voice-first**, retry a rejected answer, and confirm feedback is spoken without the microphone listening simultaneously.
+9. Confirm **voice off**, the visual controls, typing, and Ctrl/Cmd+Enter remain usable.
+
+Speech recognition is browser-dependent. If it is unavailable, the app should disable microphone controls while retaining spoken prompts and normal typing.
+
 ## API-key troubleshooting
 
 ### The modal reappears after a submission
@@ -73,6 +87,16 @@ The current app does not retry requests or expose the provider’s detailed erro
 
 The current implementation has no request timeout. Inspect the Network panel first. If the request is still pending, reload the page to clear the in-memory loading state. If the request completed, inspect the Console for a response-shape or JSON-parse error.
 
+### Voice input is unavailable or inaccurate
+
+1. Confirm the page is running at `http://localhost:8000`, not from a `file://` URL.
+2. Confirm microphone permission is allowed for localhost in the browser.
+3. Test in a browser that exposes `SpeechRecognition` or `webkitSpeechRecognition`.
+4. Confirm the operating system has a working default microphone and German recognition support.
+5. Review and edit the transcript before submitting; speech-recognition errors must not be treated as grammar errors.
+
+Some browsers send audio to their own recognition service. The app does not store or forward raw audio itself. It performs a microphone preflight before recognition and reports when an embedded browser ends recognition before receiving audio. If that message persists, use the same localhost URL in a full Chrome, Edge, or Safari window.
+
 ## UI and CDN troubleshooting
 
 ### The page is unstyled or partially styled
@@ -94,7 +118,7 @@ Check viewport width first. The custom responsive rules scale the circle to `0.8
 ### Change a grammar step
 
 1. Edit the relevant entry in `steps` in [`app.js`](./app.js).
-2. Keep `prompt`, `acceptanceCriteria`, `hint`, and `example` aligned; Jev receives all four.
+2. Keep `prompt`, `voicePrompt`, `acceptanceCriteria`, `hint`, and `example` aligned. Jev receives the written fields; speech synthesis uses `voicePrompt` and `example`.
 3. If changing the number of entries, update `NUM_STEPS` to match.
 4. Repeat the first-run procedure and smoke-test progression through the changed step.
 
@@ -112,11 +136,12 @@ The current configuration consistently targets `haben`; changing one value alone
 
 ### Validate a change before handoff
 
-Run syntax checks and the decision tests:
+Run syntax checks and the complete automated suite:
 
 ```bash
 node --check app.js
 node --check jev-evaluator.js
+node --check voice-controller.js
 node --check server.cjs
 node --test tests/*.test.js
 ```
@@ -152,8 +177,9 @@ The repository must be hosted with `server.cjs` or an equivalent server that imp
 ## Known operational limitations
 
 - No persistent learner history or progress.
+- Voice preferences persist locally, but transcripts and audio do not; raw audio is handled by the browser recognition implementation.
 - Jev-only mode provides acceptance decisions, not corrections, ideal examples, or translations.
 - No persistent logs, metrics, health endpoint, or alerting.
-- Unit tests cover the decision layer; browser, API integration, and accessibility tests are still manual or opt-in.
+- Automated tests cover the decision layer, DOM contracts, voice state/command logic, static server, and Jev proxy. Real microphone, audible output, live Jev, and accessibility checks remain manual or opt-in.
 - No lockfile or pinned CDN versions.
 - Error messages intentionally hide most provider details from the learner.

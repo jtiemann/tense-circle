@@ -7,6 +7,7 @@ const START_SENTENCE = "Ich habe einen Apfel.";
 const VERB = "haben";
 const NUM_STEPS = 11;
 const API_KEY_STORAGE_KEY = 'typesafe_jev_api_key_tense_circle';
+const VOICE_MODE_STORAGE_KEY = 'tense_circle_voice_mode';
 const JEV_API_URL = '/api/jev';
 const JEV_MODEL = 'jev-latest';
 
@@ -15,6 +16,7 @@ const steps = [
     {
         name: "Prediction",
         prompt: "Use Futur I (werden + haben) to say that you will have the apple.",
+        voicePrompt: "Imagine tomorrow. Say that you will have the apple, using the future tense.",
         acceptanceCriteria: "A finite form of werden is used with the infinitive haben to express the future.",
         hint: "Use a form such as: ich werde ... haben.",
         example: "Ich werde morgen einen Apfel haben.",
@@ -24,6 +26,7 @@ const steps = [
     {
         name: "Modal (present)",
         prompt: "Use a present-tense modal verb with haben to express necessity or possibility.",
+        voicePrompt: "Express necessity or possibility with a present-tense modal verb and the target verb.",
         acceptanceCriteria: "A finite present modal verb is paired with the infinitive haben.",
         hint: "Use a form such as: ich muss ... haben or ich kann ... haben.",
         example: "Ich muss einen Apfel haben.",
@@ -33,6 +36,7 @@ const steps = [
     {
         name: "Modal Perfect",
         prompt: "Use Perfekt with a modal verb and the double infinitive construction.",
+        voicePrompt: "Now describe a completed situation using a modal verb and the double-infinitive construction.",
         acceptanceCriteria: "A finite auxiliary form of haben is followed by lexical haben and a modal infinitive, using the Ersatzinfinitiv pattern.",
         hint: "Use the pattern: ich habe ... haben müssen/können/dürfen.",
         example: "Ich habe einen Apfel haben müssen.",
@@ -42,6 +46,7 @@ const steps = [
     {
         name: "Simple Past",
         prompt: "Use the Präteritum form of haben.",
+        voicePrompt: "Move into the simple past and say that you had the apple.",
         acceptanceCriteria: "A simple-past form of haben, such as hatte, is the main verb.",
         hint: "Use a form such as: ich hatte ...",
         example: "Ich hatte gestern einen Apfel.",
@@ -51,6 +56,7 @@ const steps = [
     {
         name: "Conditional",
         prompt: "Use Konjunktiv II Präsens with hätte or würde ... haben.",
+        voicePrompt: "Express a present hypothetical situation using the conditional mood.",
         acceptanceCriteria: "The sentence expresses a present hypothetical using hätte or würde with haben.",
         hint: "Use hätte, or use würde + haben.",
         example: "Ich hätte gern einen Apfel.",
@@ -60,6 +66,7 @@ const steps = [
     {
         name: "Perfect",
         prompt: "Use Perfekt with haben + gehabt.",
+        voicePrompt: "Create a present-perfect sentence saying that you had the apple.",
         acceptanceCriteria: "A finite form of haben is used as the auxiliary with the participle gehabt.",
         hint: "Use a form such as: ich habe ... gehabt.",
         example: "Ich habe gestern einen Apfel gehabt.",
@@ -69,6 +76,7 @@ const steps = [
     {
         name: "Conditional (past)",
         prompt: "Use Konjunktiv II Perfekt with hätte + gehabt.",
+        voicePrompt: "Express an unreal past situation using the past conditional.",
         acceptanceCriteria: "The sentence expresses an unreal past situation with hätte and gehabt.",
         hint: "Use a form such as: ich hätte ... gehabt.",
         example: "Ich hätte gestern einen Apfel gehabt.",
@@ -78,6 +86,7 @@ const steps = [
     {
         name: "Subordinate Clause: dass",
         prompt: "Create a subordinate clause with dass and place the finite form of haben at the end.",
+        voicePrompt: "Create a subordinate clause beginning with dass, and put the finite verb at the end.",
         acceptanceCriteria: "A dass subordinate clause is present and its finite form of haben appears in clause-final position.",
         hint: "Use a form such as: Ich weiß, dass ich ... habe.",
         example: "Ich weiß, dass ich einen Apfel habe.",
@@ -87,6 +96,7 @@ const steps = [
     {
         name: "Subordinate Clause: weil",
         prompt: "Create a subordinate clause with weil and place the finite form of haben at the end.",
+        voicePrompt: "Give a reason in a clause beginning with weil, and put the finite verb at the end.",
         acceptanceCriteria: "A weil subordinate clause is present and its finite form of haben appears in clause-final position.",
         hint: "Use a form such as: ..., weil ich ... habe.",
         example: "Ich bin zufrieden, weil ich einen Apfel habe.",
@@ -96,6 +106,7 @@ const steps = [
     {
         name: "Konjunktiv II",
         prompt: "Use hätte in a present hypothetical sentence.",
+        voicePrompt: "Create a present hypothetical sentence using the second subjunctive.",
         acceptanceCriteria: "The Konjunktiv II form hätte expresses a present unreal or hypothetical situation.",
         hint: "Use a form such as: Wenn ich ... hätte, ...",
         example: "Wenn ich einen Apfel hätte, wäre ich zufrieden.",
@@ -105,6 +116,7 @@ const steps = [
     {
         name: "Konjunktiv I",
         prompt: "Use Konjunktiv I habe in indirect speech.",
+        voicePrompt: "Report what another person says using the first subjunctive and indirect speech.",
         acceptanceCriteria: "The form habe reports another person's statement in indirect speech.",
         hint: "Use a form such as: Er sagt, er habe ...",
         example: "Er sagt, er habe einen Apfel.",
@@ -119,6 +131,11 @@ const requiredVerbForms = ['habe', 'hast', 'hat', 'haben', 'habt', 'hatte', 'hat
 if (!window.JevEvaluator) {
     throw new Error('JevEvaluator must be loaded before app.js.');
 }
+if (!window.VoiceController) {
+    throw new Error('VoiceController must be loaded before app.js.');
+}
+
+let voiceController;
 
 // --- Application State ---
 let gameState = {
@@ -156,6 +173,21 @@ const dom = {
     messageBox: document.getElementById('message-box'),
     inputValidIcon: document.getElementById('input-validation-icon'),
 
+    // Voice Experience
+    voiceMode: document.getElementById('voice-mode'),
+    voiceCapability: document.getElementById('voice-capability'),
+    voiceActions: document.getElementById('voice-actions'),
+    hearPromptBtn: document.getElementById('hear-prompt-btn'),
+    hintVoiceBtn: document.getElementById('hint-voice-btn'),
+    voiceAnswerBtn: document.getElementById('voice-answer-btn'),
+    voiceAnswerLabel: document.getElementById('voice-answer-label'),
+    voiceReviewActions: document.getElementById('voice-review-actions'),
+    voiceSubmitBtn: document.getElementById('voice-submit-btn'),
+    voiceRetryBtn: document.getElementById('voice-retry-btn'),
+    voiceReadbackBtn: document.getElementById('voice-readback-btn'),
+    voiceCommandBtn: document.getElementById('voice-command-btn'),
+    voiceStatus: document.getElementById('voice-status'),
+
     // History Panel
     historyList: document.getElementById('history-list'),
     historyCount: document.getElementById('history-count'),
@@ -165,6 +197,9 @@ const dom = {
 
 // --- Initialization ---
 function initApp() {
+    setupEventListeners();
+    initVoiceExperience();
+
     // Check for saved Jev API key
     const savedKey = localStorage.getItem(API_KEY_STORAGE_KEY);
 
@@ -172,8 +207,6 @@ function initApp() {
         gameState.apiKey = savedKey;
         hideModalAndStart();
     }
-
-    setupEventListeners();
 }
 
 function setupEventListeners() {
@@ -215,6 +248,16 @@ function setupEventListeners() {
     // Check Answer Submission
     dom.submitBtn.addEventListener('click', checkAnswer);
 
+    // Voice controls
+    dom.voiceMode.addEventListener('change', () => setVoiceMode(dom.voiceMode.value, true));
+    dom.hearPromptBtn.addEventListener('click', speakCurrentPrompt);
+    dom.hintVoiceBtn.addEventListener('click', showAndSpeakHint);
+    dom.voiceAnswerBtn.addEventListener('click', toggleAnswerListening);
+    dom.voiceSubmitBtn.addEventListener('click', checkAnswer);
+    dom.voiceRetryBtn.addEventListener('click', retryVoiceAnswer);
+    dom.voiceReadbackBtn.addEventListener('click', readBackTranscript);
+    dom.voiceCommandBtn.addEventListener('click', toggleCommandListening);
+
     // Enable Enter key submission (Ctrl+Enter or Cmd+Enter for textarea)
     dom.sentenceInput.addEventListener('keydown', (e) => {
         if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
@@ -242,6 +285,192 @@ function setupEventListeners() {
             }
         }
     });
+}
+
+// --- Optional Voice Experience ---
+
+function initVoiceExperience() {
+    voiceController = new window.VoiceController.Controller({
+        onStateChange: renderVoiceState,
+        onTranscript: (transcript, isFinal) => {
+            dom.sentenceInput.value = transcript;
+            dom.sentenceInput.dispatchEvent(new Event('input', { bubbles: true }));
+
+            if (isFinal) {
+                dom.voiceReviewActions.classList.remove('hidden');
+                if (voiceController.mode === window.VoiceController.MODES.VOICE_FIRST) {
+                    setTimeout(() => {
+                        if (voiceController.state === 'review' || voiceController.state === 'idle') {
+                            readBackTranscript();
+                        }
+                    }, 500);
+                }
+            }
+        },
+        onCommand: handleVoiceCommand,
+        onError: message => {
+            dom.voiceStatus.textContent = message;
+            showMessage(message, 'error');
+        }
+    });
+
+    const savedMode = localStorage.getItem(VOICE_MODE_STORAGE_KEY);
+    const mode = Object.values(window.VoiceController.MODES).includes(savedMode)
+        ? savedMode
+        : window.VoiceController.MODES.OFF;
+    dom.voiceMode.value = mode;
+    setVoiceMode(mode, false);
+}
+
+function setVoiceMode(mode, persist) {
+    voiceController.setMode(mode);
+    if (persist) localStorage.setItem(VOICE_MODE_STORAGE_KEY, mode);
+
+    const { synthesis, recognition } = voiceController.capabilities;
+    dom.voiceActions.classList.toggle('hidden', mode === window.VoiceController.MODES.OFF);
+    dom.hearPromptBtn.disabled = !synthesis;
+    dom.hintVoiceBtn.disabled = !synthesis;
+    dom.voiceReadbackBtn.disabled = !synthesis;
+    dom.voiceAnswerBtn.disabled = !recognition;
+    dom.voiceCommandBtn.disabled = !recognition;
+
+    if (synthesis && recognition) {
+        dom.voiceCapability.textContent = mode === window.VoiceController.MODES.VOICE_FIRST
+            ? 'Questions, read-back, and feedback will be spoken automatically.'
+            : mode === window.VoiceController.MODES.ASSISTED
+                ? 'Use the controls whenever you want to listen or dictate.'
+                : 'Choose how much voice assistance you want.';
+    } else if (synthesis) {
+        dom.voiceCapability.textContent = 'This browser can speak prompts, but German dictation is unavailable.';
+    } else if (recognition) {
+        dom.voiceCapability.textContent = 'German dictation is available, but spoken prompts are unavailable.';
+    } else {
+        dom.voiceCapability.textContent = 'Voice features are unavailable in this browser; typing still works.';
+        dom.voiceMode.value = window.VoiceController.MODES.OFF;
+        voiceController.setMode(window.VoiceController.MODES.OFF);
+        dom.voiceMode.disabled = true;
+    }
+
+    if (mode === window.VoiceController.MODES.OFF) {
+        dom.voiceReviewActions.classList.add('hidden');
+    } else if (persist && mode === window.VoiceController.MODES.VOICE_FIRST && gameState.apiKey) {
+        speakCurrentPrompt();
+    }
+}
+
+function renderVoiceState({ state, detail }) {
+    const listeningForAnswer = state === 'listening-answer';
+    const listeningForCommand = state === 'listening-command';
+    const requestingPermission = state === 'requesting-permission';
+    dom.voiceAnswerBtn.classList.toggle('is-listening', listeningForAnswer);
+    dom.voiceAnswerBtn.setAttribute('aria-pressed', String(listeningForAnswer));
+    dom.voiceAnswerBtn.disabled = gameState.isProcessing || requestingPermission || !voiceController.capabilities.recognition;
+    dom.voiceAnswerLabel.textContent = requestingPermission
+        ? 'Checking microphone permission…'
+        : listeningForAnswer
+            ? 'Listening… tap to stop'
+            : 'Tap to answer in German';
+    dom.voiceCommandBtn.textContent = listeningForCommand ? 'Listening… tap to stop' : 'Say a command';
+
+    const statuses = {
+        idle: 'Voice is ready.',
+        'requesting-permission': 'Waiting for microphone permission…',
+        speaking: 'Speaking…',
+        'listening-answer': detail === 'speech'
+            ? 'Speech detected. Keep speaking until your sentence is complete…'
+            : detail === 'audio'
+                ? 'Microphone connected. Listening for your German answer…'
+                : 'Listening for your German answer…',
+        'listening-command': 'Listening for: submit, try again, repeat, hint, or voice off…',
+        review: 'Transcript ready. Review it before submitting.',
+        error: 'Voice input stopped. You can retry or type instead.'
+    };
+    dom.voiceStatus.textContent = statuses[state] || 'Voice is ready.';
+}
+
+function currentVoicePrompt() {
+    const step = steps[gameState.currentStepIndex];
+    return {
+        stepNumber: gameState.currentStepIndex + 1,
+        totalSteps: NUM_STEPS,
+        name: step.name,
+        voicePrompt: step.voicePrompt,
+        startSentence: START_SENTENCE
+    };
+}
+
+function speakCurrentPrompt() {
+    return voiceController.speakPrompt(currentVoicePrompt());
+}
+
+function showAndSpeakHint() {
+    const step = steps[gameState.currentStepIndex];
+    showMessage(`Example: ${step.example}`);
+    return voiceController.speakHint(step.example);
+}
+
+function toggleAnswerListening() {
+    if (voiceController.state === 'listening-answer') {
+        voiceController.stopListening();
+        return;
+    }
+    dom.voiceReviewActions.classList.add('hidden');
+    voiceController.startAnswerListening();
+}
+
+function toggleCommandListening() {
+    if (voiceController.state === 'listening-command') {
+        voiceController.stopListening();
+        return;
+    }
+    voiceController.startCommandListening();
+}
+
+function retryVoiceAnswer() {
+    voiceController.stopAll();
+    dom.sentenceInput.value = '';
+    dom.sentenceInput.dispatchEvent(new Event('input', { bubbles: true }));
+    dom.voiceReviewActions.classList.add('hidden');
+    voiceController.startAnswerListening();
+}
+
+function readBackTranscript() {
+    const transcript = dom.sentenceInput.value.trim();
+    if (!transcript) {
+        dom.voiceStatus.textContent = 'Record or type an answer before asking for read-back.';
+        return Promise.resolve(false);
+    }
+    return voiceController.readBack(transcript);
+}
+
+function handleVoiceCommand(command, transcript) {
+    if (!command) {
+        const message = `I heard “${transcript}”, but not a supported command.`;
+        dom.voiceStatus.textContent = message;
+        voiceController.speakFeedback('I did not recognize that command.');
+        return;
+    }
+
+    if (command === 'submit') {
+        voiceController.stopAll();
+        checkAnswer();
+    } else if (command === 'retry') {
+        retryVoiceAnswer();
+    } else if (command === 'repeat') {
+        speakCurrentPrompt();
+    } else if (command === 'hint') {
+        showAndSpeakHint();
+    } else if (command === 'stop') {
+        dom.voiceMode.value = window.VoiceController.MODES.OFF;
+        setVoiceMode(window.VoiceController.MODES.OFF, true);
+    }
+}
+
+function speakFeedbackIfVoiceFirst(message) {
+    if (voiceController.mode === window.VoiceController.MODES.VOICE_FIRST) {
+        return voiceController.speakFeedback(message);
+    }
+    return Promise.resolve(false);
 }
 
 function showApiError(msg) {
@@ -309,7 +538,7 @@ function renderCircle() {
     });
 }
 
-function updateGameUI() {
+function updateGameUI({ announce = true } = {}) {
     const currentStep = steps[gameState.currentStepIndex];
 
     // 1. Update Circle Visuals
@@ -368,6 +597,7 @@ function updateGameUI() {
     dom.inputValidIcon.classList.remove('opacity-100');
     dom.inputValidIcon.classList.add('opacity-0');
     dom.sentenceInput.classList.remove('border-brand-300', 'bg-brand-50/30', 'border-red-300');
+    dom.voiceReviewActions.classList.add('hidden');
 
     // Hide messages
     hideMessage();
@@ -375,6 +605,10 @@ function updateGameUI() {
     // Ensure focus is on input for quick typing if not on mobile
     if (window.innerWidth > 768) {
         setTimeout(() => dom.sentenceInput.focus(), 300);
+    }
+
+    if (announce && voiceController.mode === window.VoiceController.MODES.VOICE_FIRST) {
+        setTimeout(speakCurrentPrompt, 350);
     }
 }
 
@@ -405,8 +639,13 @@ function setLoadingState(isLoading) {
     gameState.isProcessing = isLoading;
     dom.submitBtn.disabled = isLoading;
     dom.sentenceInput.disabled = isLoading;
+    dom.voiceAnswerBtn.disabled = isLoading || !voiceController.capabilities.recognition;
+    dom.voiceSubmitBtn.disabled = isLoading;
+    dom.voiceRetryBtn.disabled = isLoading;
+    dom.voiceCommandBtn.disabled = isLoading || !voiceController.capabilities.recognition;
 
     if (isLoading) {
+        voiceController.stopAll();
         dom.btnText.classList.add('opacity-0');
         dom.btnLoading.classList.remove('hidden');
     } else {
@@ -464,7 +703,9 @@ async function checkAnswer() {
 
     // Local Validation
     if (input.length < 10) {
-        showMessage("Sentence is too short. Please try writing a complete German sentence.", "error");
+        const message = "Sentence is too short. Please try writing a complete German sentence.";
+        showMessage(message, "error");
+        speakFeedbackIfVoiceFirst(message);
         dom.sentenceInput.focus();
         return;
     }
@@ -472,7 +713,9 @@ async function checkAnswer() {
     // Ensure they used the verb
     const includesRequired = window.JevEvaluator.containsTargetVerbForm(input, requiredVerbForms);
     if (!includesRequired) {
-        showMessage(`Your sentence must contain a form of the verb '${VERB}'.`, "error");
+        const message = `Your sentence must contain a form of the verb '${VERB}'.`;
+        showMessage(message, "error");
+        speakFeedbackIfVoiceFirst(message);
         dom.sentenceInput.focus();
         return;
     }
@@ -485,8 +728,10 @@ async function checkAnswer() {
 
         // Clear failures and uncertain decisions both remain on the current step.
         if (!result.isAccepted) {
-            showMessage(window.JevEvaluator.feedbackForDecision(result, currentStep), "error");
+            const feedback = window.JevEvaluator.feedbackForDecision(result, currentStep);
+            showMessage(feedback, "error");
             setLoadingState(false);
+            speakFeedbackIfVoiceFirst(feedback);
             return; // Halt progress
         }
 
@@ -501,7 +746,8 @@ async function checkAnswer() {
             themeColor: currentStep.theme // Pass theme for visual matching in history
         });
 
-        showMessage(`${window.JevEvaluator.feedbackForDecision(result, currentStep)} Step ${gameState.currentStepIndex + 1} completed.`);
+        const successFeedback = `${window.JevEvaluator.feedbackForDecision(result, currentStep)} Step ${gameState.currentStepIndex + 1} completed.`;
+        showMessage(successFeedback);
 
         // Render History UI
         renderHistory();
@@ -518,17 +764,26 @@ async function checkAnswer() {
         }
 
         // Update Board
-        updateGameUI();
+        updateGameUI({ announce: false });
+        if (voiceController.mode === window.VoiceController.MODES.VOICE_FIRST) {
+            voiceController.speakFeedback(successFeedback).then(speakCurrentPrompt);
+        }
 
     } catch (error) {
         if (error.message.includes("Jev API key")) {
-            showMessage("Authentication error. Please check your Jev API key by clicking 'Change API Key' below.", "error");
+            const message = "Authentication error. Please check your Jev API key by clicking Change API Key below.";
+            showMessage(message, "error");
+            speakFeedbackIfVoiceFirst(message);
             // Clear invalid key
             localStorage.removeItem(API_KEY_STORAGE_KEY);
         } else if (error.message.includes("quota or rate limit")) {
-            showMessage("Jev is temporarily unavailable because its quota or rate limit was reached. Please try again later.", "error");
+            const message = "Jev is temporarily unavailable because its quota or rate limit was reached. Please try again later.";
+            showMessage(message, "error");
+            speakFeedbackIfVoiceFirst(message);
         } else {
-            showMessage("Network or processing error. Please try clicking 'Check Answer' again.", "error");
+            const message = "Network or processing error. Please try clicking Check Answer again.";
+            showMessage(message, "error");
+            speakFeedbackIfVoiceFirst(message);
         }
     } finally {
         setLoadingState(false);
