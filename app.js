@@ -3,27 +3,122 @@
  */
 
 // --- Constants & Configuration ---
-const START_SENTENCE = "Ich lege den Apfel auf den Tisch.";
-const VERB = "legen";
+const START_SENTENCE = "Ich habe einen Apfel.";
+const VERB = "haben";
 const NUM_STEPS = 11;
+const API_KEY_STORAGE_KEY = 'typesafe_jev_api_key_tense_circle';
+const JEV_API_URL = '/api/jev';
+const JEV_MODEL = 'jev-latest';
 
 // Define the steps and their prompts
 const steps = [
-    { name: "Prediction", prompt: "Use **Futur I** (werden + haben) to make a prediction about the dog.", theme: "step-theme-blue", color: "#0ea5e9" },
-    { name: "Modal (present)", prompt: "Use a **Present Modal Verb** (e.g., *müssen*) and **'haben'** to express necessity.", theme: "step-theme-purple", color: "#9333ea" },
-    { name: "Modal Past", prompt: "Use the **Modal Verb in the Perfect** tense (e.g., *gemusst haben*) combined with **'haben'** in the infinitive to express a past necessity or possibility that didn't happen (Modal + Infinitiv).", theme: "step-theme-purple", color: "#a855f7" },
-    { name: "Simple Past", prompt: "Use the **Simple Past (Präteritum)** form of 'haben' (hatte).", theme: "step-theme-purple", color: "#c084fc" },
-    { name: "Conditional", prompt: "Use **Konjunktiv II (Präsens)** (würde + haben or hätte) to express a hypothetical situation.", theme: "step-theme-pink", color: "#ec4899" },
-    { name: "Perfect", prompt: "Use the **Perfect (Perfekt)** tense (**haben** + gehabt). Note: 'haben' uses 'haben' as its auxiliary.", theme: "step-theme-pink", color: "#f43f5e" },
-    { name: "Conditional (past)", prompt: "Use **Konjunktiv II (Perfekt)** (hätte + gehabt) to express a past condition that didn't happen.", theme: "step-theme-yellow", color: "#eab308" },
-    { name: "Subordinate Cl. 1", prompt: "Create a **Subordinate Clause** (Nebensatz) using the conjunction **'dass'** (e.g., Ich weiß, dass...).", theme: "step-theme-yellow", color: "#ca8a04" },
-    { name: "Subordinate Cl. 2", prompt: "Create a **Subordinate Clause** (Nebensatz) using the conjunction **'weil'** (e.g., Er fragt, weil...).", theme: "step-theme-red", color: "#ef4444" },
-    { name: "Konjunktiv II", prompt: "Use the shortened **Konjunktiv II** form of 'haben' again (hätte).", theme: "step-theme-red", color: "#dc2626" },
-    { name: "Konjunktiv I", prompt: "Use **Konjunktiv I** (Indirect Speech) to report the original sentence (habe).", theme: "step-theme-red", color: "#b91c1c" },
+    {
+        name: "Prediction",
+        prompt: "Use Futur I (werden + haben) to say that you will have the apple.",
+        acceptanceCriteria: "A finite form of werden is used with the infinitive haben to express the future.",
+        hint: "Use a form such as: ich werde ... haben.",
+        example: "Ich werde morgen einen Apfel haben.",
+        theme: "step-theme-blue",
+        color: "#0ea5e9"
+    },
+    {
+        name: "Modal (present)",
+        prompt: "Use a present-tense modal verb with haben to express necessity or possibility.",
+        acceptanceCriteria: "A finite present modal verb is paired with the infinitive haben.",
+        hint: "Use a form such as: ich muss ... haben or ich kann ... haben.",
+        example: "Ich muss einen Apfel haben.",
+        theme: "step-theme-purple",
+        color: "#9333ea"
+    },
+    {
+        name: "Modal Perfect",
+        prompt: "Use Perfekt with a modal verb and the double infinitive construction.",
+        acceptanceCriteria: "A finite auxiliary form of haben is followed by lexical haben and a modal infinitive, using the Ersatzinfinitiv pattern.",
+        hint: "Use the pattern: ich habe ... haben müssen/können/dürfen.",
+        example: "Ich habe einen Apfel haben müssen.",
+        theme: "step-theme-purple",
+        color: "#a855f7"
+    },
+    {
+        name: "Simple Past",
+        prompt: "Use the Präteritum form of haben.",
+        acceptanceCriteria: "A simple-past form of haben, such as hatte, is the main verb.",
+        hint: "Use a form such as: ich hatte ...",
+        example: "Ich hatte gestern einen Apfel.",
+        theme: "step-theme-purple",
+        color: "#c084fc"
+    },
+    {
+        name: "Conditional",
+        prompt: "Use Konjunktiv II Präsens with hätte or würde ... haben.",
+        acceptanceCriteria: "The sentence expresses a present hypothetical using hätte or würde with haben.",
+        hint: "Use hätte, or use würde + haben.",
+        example: "Ich hätte gern einen Apfel.",
+        theme: "step-theme-pink",
+        color: "#ec4899"
+    },
+    {
+        name: "Perfect",
+        prompt: "Use Perfekt with haben + gehabt.",
+        acceptanceCriteria: "A finite form of haben is used as the auxiliary with the participle gehabt.",
+        hint: "Use a form such as: ich habe ... gehabt.",
+        example: "Ich habe gestern einen Apfel gehabt.",
+        theme: "step-theme-pink",
+        color: "#f43f5e"
+    },
+    {
+        name: "Conditional (past)",
+        prompt: "Use Konjunktiv II Perfekt with hätte + gehabt.",
+        acceptanceCriteria: "The sentence expresses an unreal past situation with hätte and gehabt.",
+        hint: "Use a form such as: ich hätte ... gehabt.",
+        example: "Ich hätte gestern einen Apfel gehabt.",
+        theme: "step-theme-yellow",
+        color: "#eab308"
+    },
+    {
+        name: "Subordinate Clause: dass",
+        prompt: "Create a subordinate clause with dass and place the finite form of haben at the end.",
+        acceptanceCriteria: "A dass subordinate clause is present and its finite form of haben appears in clause-final position.",
+        hint: "Use a form such as: Ich weiß, dass ich ... habe.",
+        example: "Ich weiß, dass ich einen Apfel habe.",
+        theme: "step-theme-yellow",
+        color: "#ca8a04"
+    },
+    {
+        name: "Subordinate Clause: weil",
+        prompt: "Create a subordinate clause with weil and place the finite form of haben at the end.",
+        acceptanceCriteria: "A weil subordinate clause is present and its finite form of haben appears in clause-final position.",
+        hint: "Use a form such as: ..., weil ich ... habe.",
+        example: "Ich bin zufrieden, weil ich einen Apfel habe.",
+        theme: "step-theme-red",
+        color: "#ef4444"
+    },
+    {
+        name: "Konjunktiv II",
+        prompt: "Use hätte in a present hypothetical sentence.",
+        acceptanceCriteria: "The Konjunktiv II form hätte expresses a present unreal or hypothetical situation.",
+        hint: "Use a form such as: Wenn ich ... hätte, ...",
+        example: "Wenn ich einen Apfel hätte, wäre ich zufrieden.",
+        theme: "step-theme-red",
+        color: "#dc2626"
+    },
+    {
+        name: "Konjunktiv I",
+        prompt: "Use Konjunktiv I habe in indirect speech.",
+        acceptanceCriteria: "The form habe reports another person's statement in indirect speech.",
+        hint: "Use a form such as: Er sagt, er habe ...",
+        example: "Er sagt, er habe einen Apfel.",
+        theme: "step-theme-red",
+        color: "#b91c1c"
+    },
 ];
 
 // Accepted verb forms for basic validation
-const requiredVerbForms = ['habe', 'hast', 'hat', 'haben', 'habt', 'hatte', 'hattest', 'hatten', 'hattet', 'hätte', 'hättest', 'hätten', 'hättet', 'gehabt', 'wird haben'];
+const requiredVerbForms = ['habe', 'hast', 'hat', 'haben', 'habt', 'hatte', 'hattest', 'hatten', 'hattet', 'hätte', 'hättest', 'hätten', 'hättet', 'gehabt'];
+
+if (!window.JevEvaluator) {
+    throw new Error('JevEvaluator must be loaded before app.js.');
+}
 
 // --- Application State ---
 let gameState = {
@@ -70,8 +165,8 @@ const dom = {
 
 // --- Initialization ---
 function initApp() {
-    // Check for saved API key
-    const savedKey = localStorage.getItem('gemini_api_key_tense_circle');
+    // Check for saved Jev API key
+    const savedKey = localStorage.getItem(API_KEY_STORAGE_KEY);
 
     if (savedKey) {
         gameState.apiKey = savedKey;
@@ -88,12 +183,12 @@ function setupEventListeners() {
         const key = dom.inputForm.value.trim();
 
         if (key.length < 10) {
-            showApiError("Please enter a valid API key.");
+            showApiError("Please enter a valid TypeSafe API key.");
             return;
         }
 
         // Save and start
-        localStorage.setItem('gemini_api_key_tense_circle', key);
+        localStorage.setItem(API_KEY_STORAGE_KEY, key);
         gameState.apiKey = key;
         hideModalAndStart();
     });
@@ -130,7 +225,7 @@ function setupEventListeners() {
     // Input Validation Feedback
     dom.sentenceInput.addEventListener('input', () => {
         const val = dom.sentenceInput.value.trim();
-        if (val.length >= 10 && requiredVerbForms.some(form => val.toLowerCase().includes(form))) {
+        if (val.length >= 10 && window.JevEvaluator.containsTargetVerbForm(val, requiredVerbForms)) {
             dom.inputValidIcon.classList.remove('opacity-0');
             dom.inputValidIcon.classList.add('opacity-100');
             dom.sentenceInput.classList.remove('border-red-300');
@@ -320,78 +415,42 @@ function setLoadingState(isLoading) {
     }
 }
 
-// --- API Interaction ---
+// --- Jev API Interaction ---
 
-async function callGeminiAPI(currentStep, userAttempt) {
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${gameState.apiKey}`;
-
-    const systemInstruction = `You are a strict but helpful German grammar tutor.
-Your task is to review a user's attempt at expanding a starting sentence.
-The user's sentence should apply a specific grammar rule and must contain the verb 'haben'.
-Respond with a JSON object.
-
-If the user's sentence is completely unrelated, nonsensical, or clearly doesn't follow instructions, set "isValid" to false and provide a helpful "errorMessage".
-If valid, provide:
-1. "correctedAttempt": Grammatically corrected version of user's input (fix ONLY errors, keep their vocab/meaning). If their attempt is flawless, output their exact sentence.
-2. "suggestedSentence": An ideal, high-quality, native-sounding sentence strictly following the rule.
-3. "englishTranslation": Natural english translation of YOUR suggestedSentence.
-`;
-
-    const promptText = `Starting sentence: '${START_SENTENCE}'.
-Rule to apply: '${currentStep.prompt}'
-User's Attempt: '${userAttempt}'
-
-Provide parsing according to system instructions.`;
-
-    const payload = {
-        contents: [{ parts: [{ text: promptText }] }],
-        systemInstruction: { parts: [{ text: systemInstruction }] },
-        generationConfig: {
-            temperature: 0.2, // Low temp for more deterministic grammar corrections
-            responseMimeType: "application/json",
-            responseSchema: {
-                type: "OBJECT",
-                properties: {
-                    "isValid": { "type": "BOOLEAN", "description": "True if the user made a genuine attempt, false if nonsensical/unrelated." },
-                    "errorMessage": { "type": "STRING", "description": "If isValid is false, explain why." },
-                    "correctedAttempt": { "type": "STRING" },
-                    "suggestedSentence": { "type": "STRING" },
-                    "englishTranslation": { "type": "STRING" }
-                },
-                required: ["isValid"]
-            }
-        }
-    };
+async function callJevAPI(currentStep, userAttempt) {
+    const payload = window.JevEvaluator.buildJevRequest({
+        model: JEV_MODEL,
+        startSentence: START_SENTENCE,
+        targetVerb: VERB,
+        step: currentStep,
+        userAttempt
+    });
 
     try {
-        const response = await fetch(apiUrl, {
+        const response = await fetch(JEV_API_URL, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Authorization': `Bearer ${gameState.apiKey}`,
+                'Content-Type': 'application/json'
+            },
             body: JSON.stringify(payload)
         });
 
         if (!response.ok) {
-            if (response.status === 400 || response.status === 403) {
-                throw new Error("API Key invalid or quota exceeded.");
+            if (response.status === 401 || response.status === 403) {
+                throw new Error("Jev API key invalid or unauthorized.");
             }
-            throw new Error(`API error: ${response.status}`);
+            if (response.status === 429) {
+                throw new Error("Jev quota or rate limit exceeded.");
+            }
+            throw new Error(`Jev API error: ${response.status}`);
         }
 
         const data = await response.json();
-
-        // Extract JSON from response text safely
-        const textResponse = data.candidates[0].content.parts[0].text;
-
-        try {
-            return JSON.parse(textResponse);
-        } catch (e) {
-            console.error("Failed to parse Gemini JSON:", textResponse);
-            throw new Error("AI returned malformed data.");
-        }
-
+        return window.JevEvaluator.evaluateJevResponse(data);
     } catch (error) {
-        console.error("Gemini API Error:", error);
-        throw error; // Let caller handle UI
+        console.error("Jev API Error:", error);
+        throw error;
     }
 }
 
@@ -411,7 +470,7 @@ async function checkAnswer() {
     }
 
     // Ensure they used the verb
-    const includesRequired = requiredVerbForms.some(form => input.toLowerCase().includes(form));
+    const includesRequired = window.JevEvaluator.containsTargetVerbForm(input, requiredVerbForms);
     if (!includesRequired) {
         showMessage(`Your sentence must contain a form of the verb '${VERB}'.`, "error");
         dom.sentenceInput.focus();
@@ -422,11 +481,11 @@ async function checkAnswer() {
     hideMessage();
 
     try {
-        const result = await callGeminiAPI(currentStep, input);
+        const result = await callJevAPI(currentStep, input);
 
-        // Handle rejection by AI (nonsense inputted)
-        if (result.isValid === false) {
-            showMessage(result.errorMessage || "Your input didn't seem to follow the instructions. Please try again.", "error");
+        // Clear failures and uncertain decisions both remain on the current step.
+        if (!result.isAccepted) {
+            showMessage(window.JevEvaluator.feedbackForDecision(result, currentStep), "error");
             setLoadingState(false);
             return; // Halt progress
         }
@@ -438,13 +497,11 @@ async function checkAnswer() {
             stepName: currentStep.name,
             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             userText: input,
-            correctedText: result.correctedAttempt,
-            idealText: result.suggestedSentence,
-            translation: result.englishTranslation,
+            evaluation: result,
             themeColor: currentStep.theme // Pass theme for visual matching in history
         });
 
-        showMessage(`Excellent! Step ${gameState.currentStepIndex + 1} completed. Review the feedback and continue.`);
+        showMessage(`${window.JevEvaluator.feedbackForDecision(result, currentStep)} Step ${gameState.currentStepIndex + 1} completed.`);
 
         // Render History UI
         renderHistory();
@@ -464,10 +521,12 @@ async function checkAnswer() {
         updateGameUI();
 
     } catch (error) {
-        if (error.message.includes("API Key")) {
-            showMessage("Authentication error. Please check your API Key by clicking 'Change API Key' below.", "error");
+        if (error.message.includes("Jev API key")) {
+            showMessage("Authentication error. Please check your Jev API key by clicking 'Change API Key' below.", "error");
             // Clear invalid key
-            localStorage.removeItem('gemini_api_key_tense_circle');
+            localStorage.removeItem(API_KEY_STORAGE_KEY);
+        } else if (error.message.includes("quota or rate limit")) {
+            showMessage("Jev is temporarily unavailable because its quota or rate limit was reached. Please try again later.", "error");
         } else {
             showMessage("Network or processing error. Please try clicking 'Check Answer' again.", "error");
         }
@@ -480,7 +539,10 @@ async function checkAnswer() {
 
 function renderHistory() {
     if (gameState.sentenceHistory.length === 0) {
+        dom.historyList.innerHTML = '';
+        dom.historyList.appendChild(dom.emptyHistory);
         dom.emptyHistory.classList.remove('hidden');
+        dom.historyCount.textContent = '0 Sentences';
         return;
     }
 
@@ -503,21 +565,14 @@ function renderHistory() {
         container.querySelector('.timestamp').textContent = item.timestamp;
         container.querySelector('.user-text').textContent = item.userText;
 
-        const correctedBlock = container.querySelector('.correction-block');
-        const correctedTextEl = container.querySelector('.corrected-text');
-
-        // Check if correction was actually made. If user's attempt is exactly the corrected version, hide block.
-        // Convert to lowercase and trim punctuation for a fuzzy check to prevent showing trivial corrections
-        const cleanUser = item.userText.replace(/[.,!?]/g, '').trim().toLowerCase();
-        const cleanCorrected = item.correctedText.replace(/[.,!?]/g, '').trim().toLowerCase();
-
-        if (cleanUser !== cleanCorrected) {
-            correctedBlock.classList.remove('hidden');
-            correctedTextEl.textContent = item.correctedText;
-        }
-
-        container.querySelector('.ideal-text').textContent = item.idealText;
-        container.querySelector('.translation-text').textContent = `Translation: ${item.translation}`;
+        const evaluation = item.evaluation;
+        container.querySelector('.decision-text').textContent = `Accepted: ${Math.round(evaluation.compositeScore * 100)}% composite`;
+        container.querySelector('.dimension-text').textContent = [
+            `Rule ${Math.round(evaluation.dimensions.rule.normalized * 100)}%`,
+            `German ${Math.round(evaluation.dimensions.language.normalized * 100)}%`,
+            `Relevance ${Math.round(evaluation.dimensions.relevance.probability * 100)}%`
+        ].join(' · ');
+        container.querySelector('.certainty-text').textContent = `Decision certainty: ${Math.round(evaluation.decisionCertainty * 100)}%`;
 
         dom.historyList.appendChild(container);
     });
