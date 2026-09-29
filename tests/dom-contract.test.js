@@ -37,8 +37,12 @@ test('the verb data loads before the application controller', () => {
     const versPosition = htmlSource.indexOf('<script src="verbs.js"></script>');
     const appPosition = htmlSource.indexOf('<script src="app.js"></script>');
 
+    const orderPosition = htmlSource.indexOf('<script src="step-order.js"></script>');
+
     assert.ok(versPosition >= 0);
     assert.ok(appPosition > versPosition);
+    assert.ok(orderPosition >= 0);
+    assert.ok(appPosition > orderPosition);
 });
 
 test('the evaluator loads before the application controller', () => {

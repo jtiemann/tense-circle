@@ -9,6 +9,7 @@ const NUM_STEPS = 11;
 const API_KEY_STORAGE_KEY = 'typesafe_jev_api_key_tense_circle';
 const VOICE_MODE_STORAGE_KEY = 'tense_circle_voice_mode';
 const VERB_STORAGE_KEY = 'tense_circle_verb';
+const ORDER_MODE_STORAGE_KEY = 'tense_circle_order_mode';
 const JEV_API_URL = '/api/jev';
 const JEV_MODEL = 'jev-latest';
 
@@ -126,6 +127,9 @@ const HABEN_STEPS = [
     },
 ];
 
+if (!window.StepOrder) {
+    throw new Error('StepOrder must be loaded before app.js.');
+}
 if (!window.Verbs) {
     throw new Error('Verbs must be loaded before app.js.');
 }
@@ -145,7 +149,9 @@ let gameState = {
     startSentence: DEFAULT_START_SENTENCE,
     steps: HABEN_STEPS,
     requiredVerbForms: [],
+    orderMode: 'sequential',
     currentStepIndex: 0,
+    completedSteps: new Set(),
     sentenceHistory: [],
     isProcessing: false
 };
@@ -166,6 +172,10 @@ const dom = {
     // Verb selection
     verbSelect: document.getElementById('verb-select'),
     centerVerb: document.getElementById('center-verb-label'),
+
+    // Step order switch
+    orderSequentialBtn: document.getElementById('order-sequential'),
+    orderRandomBtn: document.getElementById('order-random'),
 
     // Circle UI
     circleUI: document.getElementById('circle-ui'),
@@ -210,6 +220,7 @@ function initApp() {
     setupEventListeners();
     initVoiceExperience();
     applyVerb(loadSavedVerb());
+    setOrderMode(loadSavedOrderMode(), false);
 
     // Check for saved Jev API key
     const savedKey = localStorage.getItem(API_KEY_STORAGE_KEY);
@@ -249,15 +260,16 @@ function setupEventListeners() {
     // Reset Game button
     dom.resetBtn.addEventListener('click', () => {
         if (confirm("Are you sure you want to reset your progress?")) {
-            gameState.currentStepIndex = 0;
-            gameState.sentenceHistory = [];
-            updateGameUI();
-            renderHistory();
+            restartCircle();
         }
     });
 
     // Verb selection
     dom.verbSelect.addEventListener('change', onVerbSelected);
+
+    // Step order
+    dom.orderSequentialBtn.addEventListener('click', () => setOrderMode(window.StepOrder.MODES.SEQUENTIAL, true));
+    dom.orderRandomBtn.addEventListener('click', () => setOrderMode(window.StepOrder.MODES.RANDOM, true));
 
     // Check Answer Submission
     dom.submitBtn.addEventListener('click', checkAnswer);
@@ -362,9 +374,42 @@ function onVerbSelected() {
     voiceController.stopAll();
     try { localStorage.setItem(VERB_STORAGE_KEY, verb); } catch (e) { /* storage unavailable */ }
     applyVerb(verb);
-    gameState.currentStepIndex = 0;
-    gameState.sentenceHistory = [];
     renderCircle();
+    restartCircle();
+}
+
+// --- Step Order ---
+
+function loadSavedOrderMode() {
+    try {
+        const saved = localStorage.getItem(ORDER_MODE_STORAGE_KEY);
+        if (window.StepOrder.isMode(saved)) return saved;
+    } catch (e) { /* storage unavailable */ }
+    return window.StepOrder.MODES.SEQUENTIAL;
+}
+
+// Changing the order only affects which step comes next; the current step stays.
+function setOrderMode(mode, persist) {
+    gameState.orderMode = mode;
+    if (persist) {
+        try { localStorage.setItem(ORDER_MODE_STORAGE_KEY, mode); } catch (e) { /* storage unavailable */ }
+    }
+
+    const random = mode === window.StepOrder.MODES.RANDOM;
+    dom.orderSequentialBtn.setAttribute('aria-pressed', String(!random));
+    dom.orderRandomBtn.setAttribute('aria-pressed', String(random));
+    dom.orderSequentialBtn.classList.toggle('is-selected', !random);
+    dom.orderRandomBtn.classList.toggle('is-selected', random);
+}
+
+// Starts a fresh pass through all steps, keeping the chosen verb and order.
+function restartCircle() {
+    gameState.completedSteps = new Set();
+    gameState.currentStepIndex = window.StepOrder.pickFirstStep({
+        mode: gameState.orderMode,
+        total: NUM_STEPS
+    });
+    gameState.sentenceHistory = [];
     updateGameUI();
     renderHistory();
 }
@@ -473,7 +518,7 @@ function renderVoiceState({ state, detail }) {
 function currentVoicePrompt() {
     const step = gameState.steps[gameState.currentStepIndex];
     return {
-        stepNumber: gameState.currentStepIndex + 1,
+        stepNumber: gameState.completedSteps.size + 1,
         totalSteps: NUM_STEPS,
         name: step.name,
         voicePrompt: step.voicePrompt,
@@ -644,10 +689,12 @@ function updateGameUI({ announce = true } = {}) {
         }
 
         // Visual history fading: steps we've passed become slightly more transparent
-        if (index < gameState.currentStepIndex && gameState.sentenceHistory.length > 0) {
+        if (gameState.completedSteps.has(index)) {
             el.style.opacity = '0.6';
-        } else if (index > gameState.currentStepIndex) {
+        } else if (index !== gameState.currentStepIndex) {
             el.style.opacity = '0.85'; // Default inactive
+        } else {
+            el.style.opacity = '';
         }
     });
 
@@ -659,7 +706,7 @@ function updateGameUI({ announce = true } = {}) {
         dom.stepTitle.style.opacity = 1;
     }, 150);
 
-    dom.progressTracker.textContent = `Step ${gameState.currentStepIndex + 1} of ${NUM_STEPS}`;
+    dom.progressTracker.textContent = `Step ${gameState.completedSteps.size + 1} of ${NUM_STEPS}`;
 
     // Animate instructions change
     dom.instructionText.style.opacity = 0;
@@ -828,21 +875,32 @@ async function checkAnswer() {
             themeColor: currentStep.theme // Pass theme for visual matching in history
         });
 
-        const successFeedback = `${window.JevEvaluator.feedbackForDecision(result, currentStep)} Step ${gameState.currentStepIndex + 1} completed.`;
+        const successFeedback = `${window.JevEvaluator.feedbackForDecision(result, currentStep)} ${currentStep.name} completed.`;
         showMessage(successFeedback);
 
         // Render History UI
         renderHistory();
 
         // Advance Step
-        gameState.currentStepIndex++;
+        gameState.completedSteps.add(gameState.currentStepIndex);
 
         // Check Completion
-        if (gameState.currentStepIndex >= NUM_STEPS) {
+        if (gameState.completedSteps.size >= NUM_STEPS) {
             alert("Herzlichen Glückwunsch! You have completed the entire verb circle!");
             // Optional: Confetti effect here!
-            gameState.currentStepIndex = 0; // Reset or keep showing finish state
+            gameState.completedSteps = new Set();
+            gameState.currentStepIndex = window.StepOrder.pickFirstStep({
+                mode: gameState.orderMode,
+                total: NUM_STEPS
+            });
             // gameState.sentenceHistory = []; // Keep history for review
+        } else {
+            gameState.currentStepIndex = window.StepOrder.pickNextStep({
+                mode: gameState.orderMode,
+                current: gameState.currentStepIndex,
+                completed: gameState.completedSteps,
+                total: NUM_STEPS
+            });
         }
 
         // Update Board

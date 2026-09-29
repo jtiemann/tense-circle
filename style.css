@@ -386,3 +386,30 @@ body {
         transform: scale(0.5);
     }
 }
+
+/* Sequential / random step-order switch */
+.order-switch {
+    display: inline-flex;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.5rem;
+    background: #fff;
+    overflow: hidden;
+}
+
+.order-switch button {
+    padding: 0.4rem 0.85rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #475569;
+    transition: background-color 0.2s, color 0.2s;
+}
+
+.order-switch button:focus-visible {
+    outline: 2px solid #14b8a6;
+    outline-offset: -2px;
+}
+
+.order-switch button.is-selected {
+    background: #0f172a;
+    color: #fff;
+}
