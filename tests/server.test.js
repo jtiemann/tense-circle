@@ -32,6 +32,10 @@ test('serves the application from the same origin as the API proxy', async () =>
         const voiceScript = await fetch(`${origin}/voice-controller.js`);
         assert.equal(voiceScript.status, 200);
         assert.match(voiceScript.headers.get('content-type'), /javascript/);
+
+        const verbsScript = await fetch(`${origin}/verbs.js`);
+        assert.equal(verbsScript.status, 200);
+        assert.match(verbsScript.headers.get('content-type'), /javascript/);
     });
 });
 

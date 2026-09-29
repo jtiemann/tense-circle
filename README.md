@@ -8,8 +8,9 @@ This repository is a dependency-light browser application with a small Node serv
 
 - API-key setup modal with a link to the TypeSafe dashboard.
 - TypeSafe AI Jev answer evaluation through a same-origin local proxy.
+- A "Practice verb" picker with 51 verbs (regular, irregular, and separable); switching verbs restarts the circle.
 - Eleven guided grammar steps, rendered around a circular progress UI.
-- Local input checks for minimum length and a form of `haben`.
+- Local input checks for minimum length and a form of the selected verb.
 - Three focused Jev questions in one request: two descriptive Scores and one Noul.
 - Deterministic composite scoring, confidence-aware routing, and targeted retry hints.
 - Optional Off, Assisted, and Voice-first modes with spoken prompts, German dictation, transcript review, read-back, and short voice commands.
@@ -64,6 +65,7 @@ For a voice answer, select **Tap to answer in German**, allow microphone access,
 | --- | --- |
 | [`index.html`](./index.html) | Page structure, API-key modal, game layout, circle tracks, interaction controls, history template, CDN scripts/styles. |
 | [`app.js`](./app.js) | Exercise configuration, browser state, event handlers, Jev transport, progress advancement, and rendering. |
+| [`verbs.js`](./verbs.js) | The 51 selectable verbs with starting sentences, German conjugation data, and the per-verb step generator. |
 | [`jev-evaluator.js`](./jev-evaluator.js) | Structured Jev request builder, response validation, composite decision policy, and feedback selection. |
 | [`voice-controller.js`](./voice-controller.js) | Browser speech synthesis, German speech recognition, command parsing, and voice state management. |
 | [`server.cjs`](./server.cjs) | Local static server and same-origin proxy to the TypeSafe Jev API. |

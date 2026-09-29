@@ -3,16 +3,17 @@
  */
 
 // --- Constants & Configuration ---
-const START_SENTENCE = "Ich habe einen Apfel.";
-const VERB = "haben";
+const DEFAULT_VERB = 'haben';
+const DEFAULT_START_SENTENCE = 'Ich habe einen Apfel.';
 const NUM_STEPS = 11;
 const API_KEY_STORAGE_KEY = 'typesafe_jev_api_key_tense_circle';
 const VOICE_MODE_STORAGE_KEY = 'tense_circle_voice_mode';
+const VERB_STORAGE_KEY = 'tense_circle_verb';
 const JEV_API_URL = '/api/jev';
 const JEV_MODEL = 'jev-latest';
 
-// Define the steps and their prompts
-const steps = [
+// Hand-written steps for the default verb. Every other verb uses Verbs.buildSteps().
+const HABEN_STEPS = [
     {
         name: "Prediction",
         prompt: "Use Futur I (werden + haben) to say that you will have the apple.",
@@ -125,9 +126,9 @@ const steps = [
     },
 ];
 
-// Accepted verb forms for basic validation
-const requiredVerbForms = ['habe', 'hast', 'hat', 'haben', 'habt', 'hatte', 'hattest', 'hatten', 'hattet', 'hätte', 'hättest', 'hätten', 'hättet', 'gehabt'];
-
+if (!window.Verbs) {
+    throw new Error('Verbs must be loaded before app.js.');
+}
 if (!window.JevEvaluator) {
     throw new Error('JevEvaluator must be loaded before app.js.');
 }
@@ -140,6 +141,10 @@ let voiceController;
 // --- Application State ---
 let gameState = {
     apiKey: null,
+    verb: DEFAULT_VERB,
+    startSentence: DEFAULT_START_SENTENCE,
+    steps: HABEN_STEPS,
+    requiredVerbForms: [],
     currentStepIndex: 0,
     sentenceHistory: [],
     isProcessing: false
@@ -157,6 +162,10 @@ const dom = {
     gameContainer: document.getElementById('game-container'),
     changeKeyBtn: document.getElementById('change-key-btn'),
     resetBtn: document.getElementById('reset-btn'),
+
+    // Verb selection
+    verbSelect: document.getElementById('verb-select'),
+    centerVerb: document.getElementById('center-verb-label'),
 
     // Circle UI
     circleUI: document.getElementById('circle-ui'),
@@ -197,8 +206,10 @@ const dom = {
 
 // --- Initialization ---
 function initApp() {
+    populateVerbSelect();
     setupEventListeners();
     initVoiceExperience();
+    applyVerb(loadSavedVerb());
 
     // Check for saved Jev API key
     const savedKey = localStorage.getItem(API_KEY_STORAGE_KEY);
@@ -245,6 +256,9 @@ function setupEventListeners() {
         }
     });
 
+    // Verb selection
+    dom.verbSelect.addEventListener('change', onVerbSelected);
+
     // Check Answer Submission
     dom.submitBtn.addEventListener('click', checkAnswer);
 
@@ -268,7 +282,7 @@ function setupEventListeners() {
     // Input Validation Feedback
     dom.sentenceInput.addEventListener('input', () => {
         const val = dom.sentenceInput.value.trim();
-        if (val.length >= 10 && window.JevEvaluator.containsTargetVerbForm(val, requiredVerbForms)) {
+        if (val.length >= 10 && window.JevEvaluator.containsTargetVerbForm(val, gameState.requiredVerbForms)) {
             dom.inputValidIcon.classList.remove('opacity-0');
             dom.inputValidIcon.classList.add('opacity-100');
             dom.sentenceInput.classList.remove('border-red-300');
@@ -285,6 +299,74 @@ function setupEventListeners() {
             }
         }
     });
+}
+
+// --- Verb Selection ---
+
+function loadSavedVerb() {
+    try {
+        const saved = localStorage.getItem(VERB_STORAGE_KEY);
+        if (saved && window.Verbs.findPreset(saved)) return saved;
+    } catch (e) { /* storage unavailable */ }
+    return DEFAULT_VERB;
+}
+
+function populateVerbSelect() {
+    const groups = [
+        { label: 'Regular & irregular', separable: false },
+        { label: 'Separable (trennbare Verben)', separable: true }
+    ];
+
+    for (const { label, separable } of groups) {
+        const group = document.createElement('optgroup');
+        group.label = label;
+        window.Verbs.VERB_PRESETS
+            .filter(preset => window.Verbs.getConjugation(preset.verb).isSeparable === separable)
+            .forEach(preset => {
+                const option = document.createElement('option');
+                option.value = preset.verb;
+                option.textContent = preset.label;
+                group.appendChild(option);
+            });
+        dom.verbSelect.appendChild(group);
+    }
+}
+
+function startSentenceFor(verb) {
+    return verb === DEFAULT_VERB
+        ? DEFAULT_START_SENTENCE
+        : window.Verbs.findPreset(verb).sentences[0];
+}
+
+// Points the game at a verb: steps, starting sentence, and accepted forms.
+function applyVerb(verb) {
+    const conjugation = window.Verbs.getConjugation(verb);
+    gameState.verb = verb;
+    gameState.startSentence = startSentenceFor(verb);
+    gameState.steps = verb === DEFAULT_VERB ? HABEN_STEPS : window.Verbs.buildSteps(conjugation);
+    gameState.requiredVerbForms = window.Verbs.getAllVerbForms(conjugation);
+    dom.verbSelect.value = verb;
+    dom.centerVerb.textContent = verb;
+}
+
+function onVerbSelected() {
+    const verb = dom.verbSelect.value;
+    if (verb === gameState.verb) return;
+
+    if (gameState.sentenceHistory.length > 0
+        && !confirm('Switching verbs restarts the circle and clears your history. Continue?')) {
+        dom.verbSelect.value = gameState.verb;
+        return;
+    }
+
+    voiceController.stopAll();
+    try { localStorage.setItem(VERB_STORAGE_KEY, verb); } catch (e) { /* storage unavailable */ }
+    applyVerb(verb);
+    gameState.currentStepIndex = 0;
+    gameState.sentenceHistory = [];
+    renderCircle();
+    updateGameUI();
+    renderHistory();
 }
 
 // --- Optional Voice Experience ---
@@ -389,13 +471,13 @@ function renderVoiceState({ state, detail }) {
 }
 
 function currentVoicePrompt() {
-    const step = steps[gameState.currentStepIndex];
+    const step = gameState.steps[gameState.currentStepIndex];
     return {
         stepNumber: gameState.currentStepIndex + 1,
         totalSteps: NUM_STEPS,
         name: step.name,
         voicePrompt: step.voicePrompt,
-        startSentence: START_SENTENCE
+        startSentence: gameState.startSentence
     };
 }
 
@@ -404,7 +486,7 @@ function speakCurrentPrompt() {
 }
 
 function showAndSpeakHint() {
-    const step = steps[gameState.currentStepIndex];
+    const step = gameState.steps[gameState.currentStepIndex];
     showMessage(`Example: ${step.example}`);
     return voiceController.speakHint(step.example);
 }
@@ -509,7 +591,7 @@ function renderCircle() {
     // We position them relative to the center
     const radiusPercentage = 42;
 
-    steps.forEach((step, index) => {
+    gameState.steps.forEach((step, index) => {
         // -90 to start at top (12 o'clock)
         const angle = (index * angleIncrement) - 90;
         const rad = angle * (Math.PI / 180);
@@ -539,7 +621,7 @@ function renderCircle() {
 }
 
 function updateGameUI({ announce = true } = {}) {
-    const currentStep = steps[gameState.currentStepIndex];
+    const currentStep = gameState.steps[gameState.currentStepIndex];
 
     // 1. Update Circle Visuals
     document.querySelectorAll('.step-label').forEach((el, index) => {
@@ -585,7 +667,7 @@ function updateGameUI({ announce = true } = {}) {
         dom.instructionText.innerHTML = `
             <p class="mb-3 text-sm text-slate-500">Starting sentence:</p>
             <div class="bg-indigo-100/50 p-3 rounded-xl border border-indigo-200/50 mb-3 shadow-inner">
-                 <span class="font-bold text-slate-800 text-lg sm:text-lg">"${START_SENTENCE}"</span>
+                 <span class="font-bold text-slate-800 text-lg sm:text-lg">"${gameState.startSentence}"</span>
             </div>
             <p class="font-medium text-slate-800">${currentStep.prompt}</p>
         `;
@@ -659,8 +741,8 @@ function setLoadingState(isLoading) {
 async function callJevAPI(currentStep, userAttempt) {
     const payload = window.JevEvaluator.buildJevRequest({
         model: JEV_MODEL,
-        startSentence: START_SENTENCE,
-        targetVerb: VERB,
+        startSentence: gameState.startSentence,
+        targetVerb: gameState.verb,
         step: currentStep,
         userAttempt
     });
@@ -699,7 +781,7 @@ async function checkAnswer() {
     if (gameState.isProcessing) return;
 
     const input = dom.sentenceInput.value.trim();
-    const currentStep = steps[gameState.currentStepIndex];
+    const currentStep = gameState.steps[gameState.currentStepIndex];
 
     // Local Validation
     if (input.length < 10) {
@@ -711,9 +793,9 @@ async function checkAnswer() {
     }
 
     // Ensure they used the verb
-    const includesRequired = window.JevEvaluator.containsTargetVerbForm(input, requiredVerbForms);
+    const includesRequired = window.JevEvaluator.containsTargetVerbForm(input, gameState.requiredVerbForms);
     if (!includesRequired) {
-        const message = `Your sentence must contain a form of the verb '${VERB}'.`;
+        const message = `Your sentence must contain a form of the verb '${gameState.verb}'.`;
         showMessage(message, "error");
         speakFeedbackIfVoiceFirst(message);
         dom.sentenceInput.focus();

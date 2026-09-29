@@ -33,6 +33,14 @@ test('history template exposes every class populated by renderHistory', () => {
     }
 });
 
+test('the verb data loads before the application controller', () => {
+    const versPosition = htmlSource.indexOf('<script src="verbs.js"></script>');
+    const appPosition = htmlSource.indexOf('<script src="app.js"></script>');
+
+    assert.ok(versPosition >= 0);
+    assert.ok(appPosition > versPosition);
+});
+
 test('the evaluator loads before the application controller', () => {
     const evaluatorPosition = htmlSource.indexOf('<script src="jev-evaluator.js"></script>');
     const voicePosition = htmlSource.indexOf('<script src="voice-controller.js"></script>');

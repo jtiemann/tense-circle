@@ -41,9 +41,9 @@ The HTML file provides:
 - the answer button, loading state, and feedback message region;
 - the voice-mode selector, speech controls, microphone status, and transcript-review actions;
 - the learning-history list and its `<template>`;
-- external font/Tailwind loading plus the `jev-evaluator.js`, `voice-controller.js`, and `app.js` script entry points.
+- external font/Tailwind loading plus the `verbs.js`, `jev-evaluator.js`, `voice-controller.js`, and `app.js` script entry points.
 
-Step labels are intentionally not hard-coded in HTML. `app.js` creates them from the `steps` array.
+Step labels are intentionally not hard-coded in HTML. `app.js` creates them from the selected verb's steps (`HABEN_STEPS`, or `Verbs.buildSteps()` from `verbs.js` for every other verb).
 
 ### `jev-evaluator.js`: decision boundary
 

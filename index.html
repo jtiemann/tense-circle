@@ -119,6 +119,11 @@
             </h1>
             <p class="text-slate-500 font-medium text-lg">Master German tenses through continuous sentence expansion.
             </p>
+            <div class="mt-4 flex items-center justify-center gap-2">
+                <label for="verb-select" class="text-sm font-semibold text-slate-600">Practice verb</label>
+                <select id="verb-select"
+                    class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 focus:ring-2 focus:ring-brand-500"></select>
+            </div>
         </header>
 
         <div class="w-full max-w-7xl mx-auto flex flex-col lg:flex-row gap-8 items-stretch justify-center">
@@ -141,7 +146,7 @@
                                                 flex flex-col items-center justify-center
                                                 border-4 border-white/20 hover:scale-105 transition-transform duration-300">
                         <span class="text-white/60 text-xs font-semibold uppercase tracking-wider mb-1">Verb</span>
-                        <span class="text-white text-2xl md:text-3xl font-bold">haben</span>
+                        <span id="center-verb-label" class="text-white text-2xl md:text-3xl font-bold">haben</span>
                     </div>
 
                     <!-- The physical ring track -->
@@ -426,6 +431,7 @@
         </div>
     </template>
 
+    <script src="verbs.js"></script>
     <script src="jev-evaluator.js"></script>
     <script src="voice-controller.js"></script>
     <script src="app.js"></script>
